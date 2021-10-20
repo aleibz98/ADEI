@@ -131,7 +131,7 @@ imis<-mis1$mis_ind
 imis
 mis1$mis_col # Number of missings for the current set of variables
 
-
+# Prueba
 ```
 
 ## Conteo de errores
