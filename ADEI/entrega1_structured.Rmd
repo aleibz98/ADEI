@@ -413,6 +413,7 @@ res.condes$category  # Partial association to significative levels in factors
 # The "variable to describe cannot have NA ###################################
 res.catdes<-catdes(df[,c("manufacturer",vars_num,vars_cat)],1)
 
+
 res.catdes$quanti.var  # Global association to numeric variables
 res.catdes$quanti # Partial association of numeric variables to levels of outcome factor
 res.catdes$test.chi2 # Global association to factors
