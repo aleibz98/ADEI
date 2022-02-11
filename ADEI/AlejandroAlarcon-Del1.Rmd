@@ -1,0 +1,683 @@
+---
+title: "Primera Práctica de ADEI"
+author: "Alejandro Alarcón"
+date: "10/19/2021"
+output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: no
+    toc_depth: '4'
+  word_document:
+    toc: no
+    toc_depth: '4'
+geometry: left=1.9cm,right=1.9cm,top=1.25cm,bottom=1.52cm
+fontsize: 18pt
+subtitle: 'Laboratori 1 - Data Preparation'
+classoption: a4paper
+editor_options: 
+  chunk_output_type: console
+---
+
+\newpage
+```{r setup, include=FALSE, results=FALSE}
+#Configuración del environment
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(comment = NA)
+require("knitr")
+opts_knit$set(root.dir = "/Users/aleibz/ADEI/ADEI/ADEI/CarPrices/")
+```
+
+```{r, echo=FALSE, results=FALSE}
+#Limpiamos el environment.
+
+# Clear plots
+if(!is.null(dev.list())) dev.off()
+
+# Clean workspace
+rm(list=ls())
+```
+
+
+```{r, echo=FALSE, results=FALSE}
+#Importamos las librerias y paquetes necesarios.
+
+options(contrasts=c("contr.treatment","contr.treatment"))
+
+requiredPackages <- c("effects","FactoMineR","car", "factoextra","RColorBrewer","ggplot2","dplyr","ggmap","ggthemes","knitr", "missMDA", "epiDisplay")
+
+package.check <- lapply(requiredPackages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+#verify they are loaded
+search()
+```
+
+```{r, echo=FALSE, results=FALSE}
+#Cargamos los datos
+
+filepath<-"/Users/aleibz/ADEI/ADEI/ADEI/CarPrices/"
+load(paste0(filepath,"MyOldCars-Raw.RData"))
+```
+\newpage
+# Introducción al dataset
+Echamos un vistazo al dataset
+```{r}
+summary( df )
+names( df )
+```
+
+\newpage
+## Transformación de variables categóricas a factores
+```{r}
+#Model
+df$model <- factor(paste0(df$manufacturer, "-", df$model))
+head(levels(df$model)) #Algunos de los valores para el factor modelo
+
+#Transmission
+df$transmission <- factor( df$transmission )
+levels( df$transmission )
+df$transmission <- factor( df$transmission, levels = c("Manual","Semi-Auto","Automatic"),labels = paste0("f.Trans-",c("Manual","SemiAuto","Automatic")))
+head( df )
+
+#FuelType
+df$fuelType <- factor(df$fuelType)
+levels(df$fuelType)
+df$fuelType <- factor( df$fuelType, levels = c("Diesel","Petrol","Hybrid"), labels = paste0("f.Fuel-",c("Diesel","Petrol","Hybrid")))
+
+#Manufacturer
+df$manufacturer <- factor(df$manufacturer)
+levels(df$manufacturer)
+```
+
+\newpage
+## Transformación de variables numéricas a factores
+```{r}
+#Year + Age
+summary(df$year)
+df$age <-  2021 - df$year 
+df$year<-factor(df$year)
+summary(df$age)
+
+#EngineSize
+summary(df$engineSize)
+df$engineSize <- factor(df$engineSize)
+table(df$engineSize)
+```
+
+## Exploración de las variables
+
+### Factores
+```{r}
+par(mfrow = c(2, 2))
+
+tab1(df$year)
+
+tab1(df$engineSize)
+
+tab1(df$fuelType)
+
+tab1(df$transmission)
+```
+
+### Variables numéricas
+```{r}
+par(mfrow = c(1,2))
+summary(df[c("age", "price", "mileage", "tax", "mpg")])
+boxplot( df$age, main="Age" )
+hist( df$age )
+
+boxplot( df$price, main="price" )
+hist( df$price )
+
+boxplot( df$mileage,main="mileage" )
+hist( df$mileage )
+
+boxplot( df$tax, main="tax")
+hist(df$tax)
+
+boxplot( df$mpg, main="mpg")
+hist(df$mpg)
+```
+
+Funciones útiles
+```{r}
+calcQ <- function(x) {
+  s.x <- summary(x)
+  iqr<-s.x[5]-s.x[2]
+  list(souti=s.x[2]-3*iqr, mouti=s.x[2]-1.5*iqr, min=s.x[1], q1=s.x[2], q2=s.x[3], 
+       q3=s.x[5], max=s.x[6], mouts=s.x[5]+1.5*iqr, souts=s.x[5]+3*iqr ) }
+
+countNA <- function(x) {
+  mis_x <- NULL
+  for (j in 1:ncol(x)) {mis_x[j] <- sum(is.na(x[,j])) }
+  mis_x <- as.data.frame(mis_x)
+  rownames(mis_x) <- names(x)
+  mis_i <- rep(0,nrow(x))
+  for (j in 1:ncol(x)) {mis_i <- mis_i + as.numeric(is.na(x[,j])) }
+  list(mis_col=mis_x,mis_ind=mis_i) }
+
+countX <- function(x,X) {
+  n_x <- NULL
+  for (j in 1:ncol(x)) {n_x[j] <- sum(x[,j]==X) }
+  n_x <- as.data.frame(n_x)
+  rownames(n_x) <- names(x)
+  nx_i <- rep(0,nrow(x))
+  for (j in 1:ncol(x)) {nx_i <- nx_i + as.numeric(x[,j]==X) }
+  list(nx_col=n_x,nx_ind=nx_i) }
+```
+
+\newpage
+# Por cada variable
+## Conteo de missings
+
+Iniciamos el recuento de missings creando dos estructuras de datos auxiliares y llamando a la función countNA. Como podemos apreciar, nos aparecene 13 individuos con valores de missing.
+```{r}
+imis<-rep(0,nrow(df))  # rows - trips
+jmis<-rep(0,2*ncol(df))  # columns - variables
+
+mis1<-countNA(df)
+imis<-mis1$mis_ind
+inds <- which(imis > 0)
+inds
+```
+
+Con el siguiente comando podemos ver todos los individuos que hemos seleccionado que contenian algún miss.
+En este caso, todos los miss están agrupados en la misma variable: fuelType.
+Podríamos pensar que esto podría ser debido a la existencia de coches eléctricos, pero como podemos apreciar, en algunos casos, el tipo de cambio es manual, hecho que no se aplica a los coches eléctricos.
+```{r}
+df[inds,]
+```
+
+Por último, como podemos ver en el recuento de misses por variable, se puede apreciar como todos lo misses se acumulan en la variable que hemos comentado anteriormente: fuelType.
+```{r}
+mis1$mis_col # Number of missings for the current set of variables
+```
+
+En conclusión, solo aparecen un total de 13 missing values en todo el dataframe.
+Si miramos por variables, estos 13 missings aparecen en la columna de fuelType.
+Por otro lado, y si miramos por individuos, podemos ver como para los 13 individuos que tienen missings, este está en la columna de fuelType.
+
+\newpage
+## Conteo de outliers
+
+Iniciamos el recuento de outliers creando dos estructuras de datos auxiliares y una función que retornara los individuos con extreme outliers y mild outliers por separado.
+```{r}
+iouts<-rep(0,nrow(df))  # rows - trips
+jouts<-rep(0,2*ncol(df))  # columns - variables
+
+# Funcion que recibe como parametro una columna y devuelve los ids de los individuos outlier
+outliers_column <- function(x){
+  outs <- NULL
+  out_bounds <- calcQ(x)
+  ex <- which((x<out_bounds$souti)|(x>out_bounds$souts))
+  mild <- which((x<out_bounds$mouti)|(x>out_bounds$mouts))
+  
+  boxplot(x)
+  abline(h=out_bounds$mouti,col="orange")
+  abline(h=out_bounds$mouts,col="orange")
+  abline(h=out_bounds$souti,col="red")
+  abline(h=out_bounds$souts,col="red")
+  
+  outs <- rep(0,length(x))
+  outs[mild] <- 1
+  outs[ex]  <- 2
+  if(length(ex)==0){
+      outs <- factor(outs, labels=c("Non-Outlier","Mild-Outlier"))
+  }else if(length(mild)==0){
+      outs <- factor(outs, labels=c("Non-Outlier","Extreme-Outlier"))
+  }else{
+    outs <- factor(outs, labels=c("Non-Outlier","Mild-Outlier","Extreme-Outlier"))
+  }
+  list(extreme=ex, mild=mild, outs=outs)
+}
+
+
+```
+
+Aplicaremos la función definida previamente a nuestras columnas numéricas.
+```{r}
+# Estos son los outliers tanto mild como extreme de las variables numéricas
+par(mfrow = c(1, 5))
+outs_price <- outliers_column(df$price)
+length(outs_price$mild) + length(outs_price$extreme)
+
+outs_mileage <- outliers_column(df$mileage)
+length(outs_mileage$mild) + length(outs_mileage$extreme)
+
+outs_tax <- outliers_column(df$tax)
+length(outs_tax$mild) + length(outs_tax$extreme)
+
+outs_mpg <- outliers_column(df$mpg)
+length(outs_mpg$mild)
+
+outs_age <- outliers_column(df$age)
+length(outs_age$mild) + length(outs_age$extreme)
+```
+
+Generamos la suma de todos los outliers.
+```{r}
+df$outs <- rep(0,nrow(df))
+df$outs[which(outs_mileage$outs!="Non-Outlier")] <- df$outs[which(outs_mileage$outs!="Non-Outlier")] + 1
+df$outs[which(outs_price$outs!="Non-Outlier")] <- df$outs[which(outs_price$outs!="Non-Outlier")] + 1
+df$outs[which(outs_tax$outs!="Non-Outlier")] <- df$outs[which(outs_tax$outs!="Non-Outlier")] + 1
+df$outs[which(outs_mpg$outs!="Non-Outlier")] <- df$outs[which(outs_mpg$outs!="Non-Outlier")] + 1
+df$outs[which(outs_age$outs!="Non-Outlier")] <- df$outs[which(outs_age$outs!="Non-Outlier")] + 1
+
+summary(df$outs)
+```
+
+```{r}
+# Conteo de extreme outliers
+sum_extreme_outliers <- length(outs_price$extreme) + length(outs_mileage$extreme) + length(outs_tax$extreme) + length(outs_mpg$extreme) + length(outs_age$extreme)
+sum_extreme_outliers
+# Conteo de mild outliers
+sum_mild_outliers <- length(outs_price$mild) + length(outs_mileage$mild) + length(outs_tax$mild) + length(outs_mpg$mild) + length(outs_age$mild)
+sum_mild_outliers
+```
+Como podemos apreciar, una vez realizado el sumatorio de los diferentes tipos de outliers para todo el dataframe, vemos que el número de extreme outliers es mayor al de mild outliers.
+
+Ponemos los extreme outliers como missings.
+```{r}
+df[outs_mileage$extreme,"mileage"]<-NA
+df[outs_tax$extreme,"tax"]<-NA
+df[outs_mpg$extreme,"mpg"]<-NA
+df[outs_age$extreme,"age"]<-NA
+```
+\newpage
+## Conteo de errores
+
+Procedemos al conteo de los errores.
+
+Para este apartado, en la mayoría de los casos, simplemente comprobamos que los valores insertados no sean negativos o cero, aunque tal vez se podrían tener en cuenta otros casos si se examina el dataframe de manera técnica (i.e. consumos o distancias exageradamente elevados).
+```{r}
+# Price
+  err_price <- which(df$price<0)
+  #df <- df[ -err_price, ]    #En este caso está vacío, así que no es necesario   
+  length(err_price)
+# Age
+  err_age <- which(df$age<0)
+  df[err_age,"age"] <- NA
+  length(err_age)
+# Mileage
+  err_mileage <- which(df$mileage<0)
+  df[err_mileage,"mileage"] <- NA
+  length(err_mileage)
+# mpg
+  err_mpg <- which(df$mpg<0)
+  df[err_mpg,"mpg"] <- NA
+  length(err_mpg)
+# engineSize
+  err_engineSize <- which(df$engineSize == "0")
+  df[err_engineSize,"engineSize"] <- NA
+  length(err_engineSize)
+# tax
+  err_tax <- which(df$tax<0)
+  df[err_tax,"tax"] <- NA
+  length(err_tax)
+```
+
+\newpage
+# Imputación
+
+A continuación, vamos a proceder a la imputación de los missings, errors y extreme outliers que hemos encontrado previamente.
+
+En primer lugar, separaremos nuestras variables en numéricas y categóricas. También declaramos price y manufacturer como variables respuesta.
+```{r}
+library(missMDA)
+names(df)
+vars_num <- names(df)[c(5,7,8,11)]
+vars_cat <- names(df)[c(1,2,4,6,9)]
+vars_res <- names(df)[c(3,10)]
+```
+\newpage
+## Imputación de variables numéricas
+
+Podemos echar un pequeño vistazo a nuestras variables numéricas.
+```{r}
+summary(df[,vars_num])
+```
+
+Aplicamos la función imputePCA con 2 componentes primarias.
+(Teniendo en cuenta el PCA que realizamos en laboratorios posteriores, dos componentes son suficientes para aglutinar más del 80% de la variabilidad).
+```{r}
+res.impca <- imputePCA(df[,vars_num], ncp = 2)
+summary(res.impca$completeObs)
+```
+
+Vamos a ver para cada variable, el valor que acaban recibiendo los individuos que hemos inputado:
+```{r}
+head(res.impca$completeObs[ outs_age$extreme, "age" ])
+head(res.impca$completeObs[ outs_mileage$extreme, "mileage" ])
+head(res.impca$completeObs[ outs_tax$extreme, "tax" ])
+head(res.impca$completeObs[ outs_mpg$extreme, "mpg" ])
+```
+
+Sustituimos en el dataframe original:
+```{r}
+df[, vars_num] <- res.impca$completeObs
+```
+
+Como podemos ver, en los valores que previamente teniamos NA, ahora aparecen los valores que se han obtenido de la imputación.
+```{r}
+df[outs_age$extreme,"age"]
+df[outs_mpg$extreme,"mpg"]
+```
+\newpage
+## Imputación de factores
+
+Vamos a empezar echando un vistazo al summary de las variables categóricas. 
+
+Podemos apreciar que en el caso de fuelType, nos aparecen 13 valores NA (los missings que hemos encontrado). 
+
+En el caso de engineSize, podemos ver que aparecen 9 NAs (los errores que hemos encontrado).
+```{r}
+summary(df[,vars_cat])
+```
+
+Procedemos con la imputación:
+```{r}
+res.immca <- imputeMCA(df[,vars_cat],ncp=10)
+summary(res.immca$completeObs)
+```
+Podemos ver como en el summary que acabamos de realizar, ya no aparecen valores NA para ninguna de las variables.
+
+Sustituimos la salida de la imputación en nuestro dataframe:
+```{r}
+df[,vars_cat]<-res.immca$completeObs
+```
+
+\newpage
+# Discretización de variables numéricas en factores
+
+Una vez hemos realizado la imputación, tanto de las variables numéricas como de los factores, vamos a proceder a la discretización de las variables numéricas.
+
+En los casos de age o tax, esta discretización se ha hecho de manera pseudo-aleatoria, ya que la discretización por cuantiles no funcionaba bien debido a la distribución de estas variables.
+```{r}
+vars_num
+```
+
+Como hemos podido ver con anterioridad, las distribuciones de estas variables son bastante diferentes entre sí.
+
+En el caso de price o mpg, por ejemplo, podemos ver que la distribución se aproxima más a una normal.
+
+Por otro lado, en la variable mileage, esta se podría aproximar mejor con una distribuxión de chi-cuadrado o exponencial.
+
+Finalmente, para la variable tax, podemos ver que existe una gran acumulación en valores cercanos a 145.
+
+A continuación lo estudiaremos con más profundidad.
+
+\newpage
+## Mileage
+En primer lugar vamos a echar un vistazo a esta variable.
+```{r}
+summary(df$mileage)
+par(mfrow = c(2,1))
+boxplot(df$mileage,horizontal = TRUE)
+hist(df$mileage, breaks=100)
+```
+
+Procedemos a la discretización según cuantiles, ya que en este caso si que era bastante representativa.
+```{r}
+quants <- quantile(df$mileage,seq(0,1,0.25),na.rm=TRUE)
+
+df$aux <- factor(cut(df$mileage, breaks=quants[1:5], include.lowest = TRUE))
+df$f.miles<-factor(cut(df$mileage/1000,breaks=quants[1:5]/1000,include.lowest = TRUE ))
+levels(df$f.miles)<-paste("f.miles-",levels(df$f.miles),sep="")
+table(df$f.miles)
+#Esto cuadra ya que estamos tomando como referencia los quantiles y podemos ver como en todos hay el mismo número de elementos
+```
+Como podemos apreciar, aparecen 1250 elementos en cada cuantil, que es lo que esperariamos en condiciones ideales.
+
+\newpage
+## Tax
+Para la variables tax la cosa se complica un poco.
+
+Si echamos un vistazo a algunos gráficos, podemos ver como hay una gran acumulación en valores entre 140 y 155. Esto hace que, al generar los cuantiles, el q1 y el q2 tengan el mismo valor, de modo que vamos a proceder con una discretización alternativa.
+```{r}
+summary(df$tax)
+par(mfrow = c(2, 1))
+boxplot(df$tax, horizontal = TRUE)
+hist(df$tax, breaks=200)
+
+
+df$aux <- factor(cut(df$tax, breaks=c(0,144,145,155,205), include.lowest = TRUE))
+table(df$aux)
+```
+En la tabla podemos ver el gran pico en el valor 145, que acumula 2647 elementos, más de la mitad del tamaño de la muestra.
+
+
+Por último, generamos una variable factor con etiquetas para los diferentes intervalos que hemos definido.
+```{r}
+df$f.tax<-factor(cut(df$tax,breaks=c(0,144,145,155,205),include.lowest = TRUE ))
+levels(df$f.tax)<-paste("f.tax-",levels(df$f.tax),sep="")
+table(df$f.tax)
+```
+
+\newpage
+## Mpg
+En el caso de la variable mpg, vamos a proceder con una discretización por cuantiles, ya que su distribución lo permite y el resultado es bastante explicativo junto con las etiquetas que vamos añadir al factor.
+```{r}
+summary(df$mpg)
+par(mfrow = c(2, 1))
+boxplot(df$mpg, horizontal = TRUE)
+hist(df$mpg)
+
+quants <- quantile(df$mpg,seq(0,1,0.25),na.rm=TRUE)
+
+df$aux <- factor(cut(df$mpg, breaks=quants[1:5], include.lowest = TRUE))
+df$f.mpg<-factor(cut(df$mpg,breaks=quants[1:5],include.lowest = TRUE ))
+levels(df$f.mpg)<-paste("f.mpg-",c("muy bajo","bajo","medio","alto"),sep="")
+table(df$f.mpg)
+```
+
+\newpage
+### Age
+
+La variable age, similarmente a la variable mileage, tiene una distribución que se acumula en valores bajos. De modo que vamos a aplicar una dicretización según los primeros cuantiles generando tres intervalos.
+```{r}
+summary(df$age)
+par(mfrow = c(2, 1))
+boxplot(df$age,horizontal = TRUE)
+hist(df$age)
+
+quants <- quantile(df$age,seq(0,1,0.25),na.rm=TRUE)
+
+df$aux <- factor(cut(df$age, breaks=c(quants[1:3],max(df$age)), include.lowest = TRUE))
+summary(df$aux)
+df$f.age<-factor(cut(df$age,breaks=c(quants[1:3],max(df$age)),include.lowest = TRUE ))
+levels(df$f.age)<-paste("f.age-",c(levels(df$f.age)[1:2],"(+4)"),sep="")
+table(df$f.age)
+```
+
+
+
+\newpage
+### Price
+
+Por último, vamos a discretizar nuestro target numérico price. En este caso, lo vamos a dividir en 8 categorias ya que es uno de los requisitos que se marcan para entregas posteriores.
+```{r}
+quants <- quantile(df$price,seq(0,1,0.125),na.rm=TRUE)
+
+df$aux <- factor(cut(df$price, breaks=c(quants[1:8],max(df$price)), include.lowest = TRUE))
+summary(df$aux)
+df$f.price<-factor(cut(df$price,breaks=c(quants[1:8],max(df$price)),include.lowest = TRUE ))
+levels(df$f.price)<-paste("f.price-",c(levels(df$f.price)),sep="")
+table(df$f.price)
+```
+
+```{r,include=FALSE}
+df["aux"] <- NULL
+```
+
+\newpage
+## Generación del target categórico Audi
+Vamos a proceder a generar nuestro target categórico.
+
+Como indica la documentación de la práctica, este va a consistir en una variable que nos indique si el fabricante de un vehículo es Audi.
+```{r}
+df$Audi<-ifelse(df$manufacturer == "Audi",1,0)
+df$Audi<-factor(df$Audi,labels=paste("Audi",c("No","Yes")))
+summary(df$Audi)
+```
+
+A continuación algunos plots que nos ayudan a explicar esta varible.
+```{r}
+par(mfrow = c(1, 2))
+# Pie
+piepercent<-round(100*(table(df$Audi)/nrow(df)),dig=2); piepercent
+pie(table(df$Audi),col=heat.colors(2),labels=paste(piepercent,"%"))
+legend("topright", levels(df$Audi), cex = 0.8, fill = heat.colors(2))
+# Bar Chart
+barplot(table(df$Audi),col=c("red","yellow"))
+```
+
+\newpage
+# Identificación los outliers multivariantes
+
+En este apartado vamos a proceder con la identificación de los outliers multivariante.
+En primer lugar, vamos a cargar la librería y echaremos un primer vistazo a los posibles outliers.
+```{r}
+library(mvoutlier)
+
+ll<-which(is.na(df$price)) #vacío
+summary(df[,c(vars_res[1],vars_num)])
+```
+
+La ejecución de la función aq.plot (Adjusted Quantile) genera 4 gráficos. 
+  * En el de arriba a la izquierda podemos ver los datos originales.
+  * En el de arriba a la derecha podemos ver la aproximación de estos datos a una distribucion de chi-cuadrado.
+  * En el de abajo a la izquierda podemos ver los outliers determinados por el cuantil especificado de la chi-cuadrado (99.5%).
+  * En el de abajo a la derecha podemos ver los outliers determinados por el Adjusted Quantile (99.5%).
+```{r}
+mout<-aq.plot(df[,c(vars_res[1],vars_num)],delta=qchisq(0.995,5),quan=0.995)
+```
+
+A continuación, vamos a usar la función Moutlier para mostrar más información sobre los posibles outliers segun la distancia de Mahalanobis. Cabe destacar que el output de esta función nos devuelve tanto la distancia de Mahalanobis clásica como la robusta.
+
+Esta función se debe aplicar a conjuntos de datos qus siguen una distribución normal, de modo que, según el estudio que hemos realizado previamente, solo lo aplicaremos a las variables de price, mileage, mpg y distance.
+
+Disclaimer: Para las variables que menciono anteriormente, el programa funciona bien. Si añadimos tax, falla. Pero si nos fijamos en los histogramas/barplots de las variables que mencionamos, las únicas en las que podríamos suponer una normalidad en los datos serían price y mpg, ya que age o mileage tienden a una acumulación en valores bajos siguiendo distrubuciones que podrían ser parecidas a chi-cuadrado, log normal o exponencial.
+
+Seguimos con el análisis de Outliers Multivariantes.
+
+En este caso, aplicaremos la función Moutlier a las variables que hemos mencionado anteriormente, mostrando las distancias de Mahalanobis clásica y robusta. Además, esta función nos genera un cutoff a partir del cual podemos detectar los outliers.
+```{r}
+library(chemometrics)
+mout<-Moutlier(df[,c("price","mileage","mpg","age")],quantile = 0.995, plot = TRUE)
+ll<-which(mout$md > mout$cutoff)
+```
+
+Vamos a echar un vistazo a las propiedades de las individuos considerados como Multivariant Outliers.
+```{r}
+summary(df[ll,c("price","mileage","mpg","age")])
+```
+
+Finalmente, crearemos una variable auxiliar que nos marcará, para cada individuo, si es Multivariant Outlier o no.
+```{r}
+df$mout <- 0
+df$mout[ ll ]<-1
+df$mout <- factor( df$mout, labels=c( "NoMOut","YesMOut"))
+table(df$mout)
+```
+
+\newpage
+# Profiling
+
+Por último, vamos a realizar el profiling de nuestro dataframe según nuestras variables target: Audi como variable categórica y price como variable numérica.
+
+## Target numérico (Price)
+```{r}
+library(FactoMineR)
+summary(df$price)
+vars_num <- c("mileage","tax","mpg","age")
+vars_cat <- c("model","year","transmission","fuelType","engineSize","f.miles","f.tax","f.mpg","f.age","Audi")
+```
+
+Vamos a proceder al profiling del target numérico a partir de la función condes del paquete FactoMineR
+```{r}
+res.condes<-condes(df[,c("price",vars_num,vars_cat,"manufacturer")],1)
+```
+
+```{r}
+res.condes$quanti  # Global association to numeric variables
+```
+Como podemos apreciar en la anterior salida, las variables numéricas que más correlación tienen con nuestra variable target (price) son mileage, mpg y age. En este caso, cabe destacar que se correlacionan de manera negativa. Esto indica que son inversamente proporcionales, es decir, que a más mileage/mpg/age, menor price (y viceversa).
+
+```{r}
+res.condes$quali # Global association to factors
+```
+En el caso de las variables categóricas (o factores), podemos apreciar que existe una clara relación entre los factores model, year, engineSize. También con algunos de los factores que hemos creado derivados de las variables numéricas. Vamos a analizarlo más a fondo:
+
+Ahora nos fijaremos en las primeras lineas de la salida de condes$category:
+```{r}
+head(res.condes$category)  # Partial association to significative levels in factors
+```
+En esta salida podemos apreciar como para coches nuevos, y con un consumo o kilometraje bajos, el precio estimado es más alto.
+Como casos notables también podemos mencionar algunos casos de coches premium, para los que el valor estimado es más alto:
+```
+  model=Mercedes- G Class         45588.6851  5.645865e-07
+  model=BMW- X7                   42925.9709  9.727955e-37
+```
+Y si nos fijamos en las últimas:
+```{r}
+tail(res.condes$category)
+```
+Podemos apreciar como factores como el cambio de marchas manual, un kilometraje alto o un cosumo alto tienden a abaratar el vehículo.
+
+Algunos casos especiales son modelos de VW, que ven su precio realmente reducido:
+```
+  model=VW- CC                   -17098.5649  7.630716e-03
+  model=VW- Beetle               -20721.5371  1.122196e-04
+```  
+
+## Target factor (AUDI)
+Vamos a proceder a ejecutar la función catdes con para identificar las asociaciones hacia el target categórico que hemos generado.
+Para esto, y ya que simplemente considero que no es indicativo, no usaré las variable modelo ni manufacturer, ya que no aportan ningún tipo de infomación al análisis.
+```{r}
+res.catdes<-catdes(df[,c("Audi",vars_num,vars_cat[2:9])],1)
+```
+
+Procedemos a ver las variables que parecen estar más correlacionadas con nuestra variable target:
+```{r}
+res.catdes$quanti.var  # Global association to numeric variables
+```
+
+Si lo analizamos un poco más las relaciones con variables numéricas, podemos ver que los vehículos Audi tienen consumos más bajos y kilometrages, antigüedad e impuestos más altos que la muestra que estudiamos. Si analizamos los vehículos que no son Audi, veremos lo contrario.
+```{r}
+res.catdes$quanti # Partial association of numeric variables to levels of outcome factor
+```
+
+Si estudiamos las varibles categóricas, podemos ver que los factores generados con las discretizaciones que hemos realizado anteriormente se relacionan de manera estrecha con nuestro target, además del engineSize, el fuelType o la transmission.
+```{r}
+res.catdes$test.chi2 # Global association to factors
+```
+
+Por último, vamos a entrar más en detalle en la relación de las variables categóricas con nuestro target.
+```{r}
+res.catdes$category  # Partial association to significative levels in factors
+```
+Vamos a interpretar un poco la salida anterior.
+Si cogemos este ejemplo,
+```
+`Audi No`                     
+                                Cla/Mod     Mod/Cla Global      p.value     v.test
+engineSize=2.1                100.00000 10.47280122   8.24 9.327968e-46  14.198736
+```
+podemos entender como el 100% de los vehiculos con engineSize=2.1, no están fabricados por Audi. También podemos extraer que el 10.47% de los vehículos no fabricados por Audi tienen engineSize=2.1.
+
+Otro ejemplo:
+```
+`Audi Yes`
+                                 Cla/Mod    Mod/Cla Global      p.value     v.test
+transmission=f.Trans-Manual    24.342473 40.8067542  35.74 1.111890e-04   3.864781
+```
+En este caso podemos ver como el 24.34% de los vehículos con transmisión manual son Audi. Además, el 40.80% de los vehículos fabricados por Audi, tienen transmisión manual.
+
+

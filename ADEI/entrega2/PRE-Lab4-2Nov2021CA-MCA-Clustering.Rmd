@@ -1,0 +1,274 @@
+---
+title: "CarPrizes"
+author: "Lidia Montero"
+date: \today
+output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: no
+    toc_depth: '4'
+  word_document:
+    toc: no
+    toc_depth: '4'
+geometry: left=1.9cm,right=1.9cm,top=1.25cm,bottom=1.52cm
+fontsize: 18pt
+subtitle: 'Laboratori 6 - MCA and Clustering'
+classoption: a4paper
+editor_options: 
+  chunk_output_type: console
+---
+
+# Presentation - Títol nivell 1
+## R Markdowns document - Títol nivell 2
+
+This is an R Markdown document. 
+We are showing some examples of GLMz. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>. Use * to provide emphasis such as *italics* and **bold**.
+
+Create lists: Unordered * and +     or   ordered   1. 2.  
+
+  1. Item 1
+  2. Item 2
+    + Item 2a
+    + Item 2b
+
+## Data Description
+
+## Data Description: 100,000 UK Used Car Data set
+ 
+This data dictionary describes data  (https://www.kaggle.com/adityadesai13/used-car-dataset-ford-and-mercedes) - A sample of 5000 trips has been randomly selected from Mercedes, BMW, Volkwagen and Audi manufacturers. So, firstly you have to combine used car from the 4 manufacturers into 1 dataframe.
+
+The cars with engine size 0 are in fact electric cars, nevertheless Mercedes C class, and other given cars are not electric cars,so data imputation is requered. 
+
+
+  -   manufacturer	Factor: Audi, BMW, Mercedes or Volkswagen
+  -   model	Car model
+  -   year	registration year
+  -   price	price in £
+  -   transmission	type of gearbox
+  -   mileage	distance used
+  -   fuelType	engine fuel
+  -   tax	road tax
+  -   mpg	Consumption in miles per gallon   
+  -   engineSize	size in litres
+
+
+# Load Required Packages: to be increased over the course
+
+```{r}
+# Load Required Packages: to be increased over the course
+options(contrasts=c("contr.treatment","contr.treatment"))
+
+requiredPackages <- c("effects","FactoMineR","car","missMDA","mvoutlier","chemometrics", "factoextra","RColorBrewer","ggplot2","dplyr","ggmap","ggthemes","knitr")
+
+#use this function to check if each package is on the local machine
+#if a package is installed, it will be loaded
+#if any are not, the missing package(s) will be installed and loaded
+package.check <- lapply(requiredPackages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+#verify they are loaded
+search()
+
+```
+
+## Load Processed data
+
+```{r}
+# Clear plots
+if(!is.null(dev.list())) dev.off()
+
+# Clean workspace
+rm(list=ls())
+
+setwd("C:/Users/lmontero/Dropbox/DOCENCIA/FIB-ADEI/PRACTICA/NYCABS/LABS")
+filepath<-"C:/Users/lmontero/Dropbox/DOCENCIA/FIB-ADEI/PRACTICA/NYCABS/LABS/"
+# green_tripdata_2016-01
+
+### Load  workspace already clean and prepared
+
+setwd("E:/Docencia_UPC/GEI-ADEI/Lab 6")
+filepath<-"E:/Docencia_UPC/GEI-ADEI/Lab 1/"
+
+load(paste0(filepath,"MyOldCars-1000Clean.RData"))
+options(contrasts=c("contr.treatment","contr.treatment"))
+
+```
+
+# CA: f.cost (discretization of Total_amount) vs f.hour and f.tt and period ...
+
+```{r}
+par(mfrow=c(1,1))
+
+tt<-table(df[,c("aux_price","aux_age")])
+tt
+res.ca<-CA(tt)
+# lines(res.ca$row$coord[,1],res.ca$row$coord[,2],lwd=2,col="blue")
+chisq.test(tt)
+
+names(res.ca)
+fviz_eig(res.ca)
+summary(res.ca,dig=2)
+
+plot( res.ca, cex=0.8, graph.type = "classic" )
+lines( res.ca$row$coord[,1], res.ca$row$coord[,2], col="blue", lwd = 2 )
+lines( res.ca$col$coord[,1], res.ca$col$coord[,2], col="red", lwd = 2 )
+fviz_ca_biplot(res.ca,repel=TRUE)+theme_bw() 
+
+tt<-table(df[,c("aux_price","fuelType")])
+tt
+res.ca<-CA(tt)
+plot( res.ca, cex=0.8, graph.type = "classic" )
+lines( res.ca$row$coord[,1], res.ca$row$coord[,2], col="blue", lwd = 2 )
+lines( res.ca$col$coord[,1], res.ca$col$coord[,2], col="red", lwd = 2 )
+summary(res.ca)
+chisq.test(tt)
+```
+
+# MCA using multivariant
+
+```{r}
+par(mfrow=c(1,1))
+llvout<-which(df$mout=="YesMOut");length(llvout)
+vars_dis
+c("Audi",vars_dis[3:11],"price")
+summary( df[-llvout,c("aux_price","Audi",vars_dis,"price") ])
+res.mca<-MCA(df[,c("aux_price","Audi",vars_dis[c(3:4, 6:11)],"price") ],quali.sup=c(1,2),quanti.sup=11 , ind.sup=llvout)
+summary(res.mca,nbelements=50, nbind=0)
+mean(res.mca$eig[,1]) #All dimensions which eigenvalue is higher than the mean or 80% of explained variance
+
+# Individual Representation
+plot.MCA(res.mca,choix=c("ind"),cex=0.8)
+plot.MCA(res.mca,choix=c("ind"),invisible=c("ind"),cex=0.8)
+
+# Representation of categories
+plot.MCA(res.mca,choix=c("ind"),invisible=c("ind"),axes=c(1,2), graph.type = "classic", cex = 0.5)
+lines(res.mca$var$coord[1:3,1],res.mca$var$coord[1:3,2],lwd=1,col="black") # Transmission
+lines(res.mca$quali.sup$coord[1:4,1],res.mca$quali.sup$coord[1:4,2],lwd=2,col="darkgreen")
+names(res.mca)
+res.mca$var
+plot.MCA(res.mca,choix=c("ind"),invisible=c("ind"),axes=c(3,4))
+plot.MCA(res.mca,choix=c("var"),axes=c(3,4))
+
+# Use modern ggplot facilities
+names(res.mca)
+fviz_eig(res.mca)
+fviz_cos2(res.mca, choice = "var", axes = 1:2)+theme_bw()
+fviz_contrib(res.mca, choice = "var", axes = 1:2)+theme_bw()
+fviz_contrib(res.mca, choice = "var", axes = 1:2)+
+   theme(text = element_text(size = 7.5),
+         axis.title = element_text(size = 5),
+         axis.text = element_text(size = 5)
+         )
+
+fviz_mca_var(res.mca, col.var="contrib",repel=TRUE,labelsize = 2)+
+    scale_color_gradient2(low="green", mid="blue", 
+    high="red", midpoint=0.75)+theme_bw()
+
+fviz_mca_biplot(res.mca, invisible="ind",axes=1:2,repel=T,labelsize = 2)+theme_bw()
+#fviz_mca_biplot(res.mca, axes=1:2,repel=TRUE,arrows=c(TRUE,FALSE))+theme_bw()
+```
+
+# Synthesis through HCPC: Hierarchical Clustering
+
+```{r}
+###
+### Clustering the individuals
+### Before, you have to perform a MCA with the number of axes 
+### that you have decided to take into account (indicated through ncp=)
+?HCPC
+res.mca<-MCA(df[,c("f.price","y.bin",vars_dis[c(3:5,7:11)],"price") ],quali.sup=c(1,2),quanti.sup=11 , ind.sup=llvout, ncp = 13 )
+res.hcmc<-HCPC(res.mca,nb.clust=6,order=TRUE)
+names(res.hcmc)
+
+names(res.hcmc$call$t)
+res.hcmc$call$t$within[1:15]
+(res.hcmc$call$t$within[1]-res.hcmc$call$t$within[1:15])/res.hcmc$call$t$within[1]
+
+df$claHCMC<-7
+df[row.names(res.hcmc$data.clust),"claHCMC"]<-res.hcmc$data.clust$clust
+df$claHCMC<-factor(df$claHCMC)
+levels( df$claHCMC ) <- paste0( "f.claHCMC-",levels( df$claHCMC ))
+summary(res.hcmc$data.clust$clust)
+table(df$claHCMC)
+
+### Interpret clustering results
+summary(res.hcmc$data.clust$clust)
+
+#Block A: res.hcmc$desc.var
+#Block B: res.hcmc$desc.axes
+#Block C: res.hcmc$desc.ind
+
+
+### desc.var ###
+### A. The description of the clusters by the variables ###
+names(res.hcmc$desc.var)
+res.hcmc$desc.var
+### desc.var$test.chi2 ###
+### A.1. The categorical variables which characterizes the clusters ###
+res.hcmc$desc.var$test.chi2
+
+### desc.var$category ###
+### A.2. The description of each cluster by the categories ##
+res.hcmc$desc.var$category
+
+### desc.var$quanti.var ###
+### A.3. The quantitative variables which characterizes the clusters ###
+res.hcmc$desc.var$quanti.var
+
+### desc.var$quanti ###
+### A.4. The description of each cluster by the quantitative variables ###
+res.hcmc$desc.var$quanti
+
+### desc.axes ###
+### B. The description of the clusters by the axes ###
+names(res.hcmc$desc.axes)
+res.hcmc$desc.axes
+res.hcmc$desc.axes$quanti.var
+res.hcmc$desc.axes$quanti
+
+### desc.ind ###
+### C. The description of the clusters by the individuals ###
+names(res.hcmc$desc.ind)
+res.hcmc$desc.ind$para
+res.hcmc$desc.ind$dist
+
+#### Characteristic individuals
+para1<-which(rownames(res.mca$ind$coord)%in%names(res.hcmc$desc.ind$para[[1]]))
+para2<-which(rownames(res.mca$ind$coord)%in%names(res.hcmc$desc.ind$para[[2]]))
+para3<-which(rownames(res.mca$ind$coord)%in%names(res.hcmc$desc.ind$para[[3]]))
+# to be completed...
+
+# Dendrogram
+fviz_dend(res.hcmc, show_labels = FALSE)
+# Individuals factor map
+fviz_cluster(res.hcmc, geom = "point", main = "Factor map")
+
+summary( df[llvout,c("f.price","y.bin",vars_dis[c(3:5,7:11)],"price","claHCMC")] )
+res.mca <- MCA( df[ , c("f.price","y.bin",vars_dis[c(3:5,7:11)],"price","claHCMC")  ], quali.sup = c(1,2,12), quanti.sup = 11 , ncp = 13 )
+fviz_mca_ind(res.mca, 
+             label = "none", invisible=c("ind.sup"),# hide individual labels
+             habillage = "claHCMC", # color by groups 
+             addEllipses = TRUE, ellipse.type = "confidence",
+             ggtheme = theme_bw()) 
+```
+
+# Kmeans: Partitioning in k=8 groups
+```{r}
+llvout<-which(df$mout=="YesMOut");length(llvout)
+res.mca <- MCA( df[ , c("aux_price","Audi",vars_dis[c(3:4,6:11)],"price")  ], quali.sup = c(1,2), quanti.sup = 11 , ind.sup = llvout, ncp = 13 )
+summary(res.mca)
+ppcc<-res.mca$ind$coord[,1:13]
+dim(ppcc)
+kc<-kmeans(dist(ppcc),6, iter.max = 30, trace=T)
+
+df[-llvout,"claKMMC"]<-kc$cluster
+kc$betweenss/kc$totss
+
+```
+

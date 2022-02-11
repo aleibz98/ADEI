@@ -1,0 +1,780 @@
+---
+title: "Entrega 3"
+author: "Alejandro Alarcón"
+date: "23/12/2021"
+output:
+    pdf_document:
+      number_sections: yes
+      toc: yes
+      toc_depth: 4
+geometry: left=1.9cm,right=1.9cm,top=1.25cm,bottom=1.52cm
+fontsize: 18pt
+subtitle: 'Modelos de predicción Numéricos y Binarios'
+classoption: a4paper
+editor_options: 
+  chunk_output_type: console
+---
+\newpage
+
+# Introducción
+```{r setup, include=FALSE, results=FALSE, echo=FALSE}
+#Configuración del environment
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(comment = NA)
+require("knitr")
+opts_knit$set(root.dir = "/Users/aleibz/ADEI/ADEI/ADEI/")
+```
+
+```{r, echo=FALSE, results=FALSE, include=FALSE}
+#Limpiamos el environment.
+
+# Clear plots
+if(!is.null(dev.list())) dev.off()
+
+# Clean workspace
+rm(list=ls())
+```
+
+```{r, echo=FALSE, results=FALSE, include=FALSE}
+#Importamos las librerias y paquetes necesarios.
+
+options(contrasts=c("contr.treatment","contr.treatment"))
+
+requiredPackages <- c("effects","FactoMineR","car", "factoextra","RColorBrewer","ggplot2","dplyr","ggmap","ggthemes","knitr", "missMDA","games")
+
+package.check <- lapply(requiredPackages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+#verify they are loaded
+search()
+```
+
+```{r, results=FALSE, include=FALSE}
+load("/Users/aleibz/ADEI/ADEI/ADEI/data_del1.RData")
+```
+
+```{r, echo=FALSE, results=FALSE, include=FALSE}
+vars_res<-c("price","Audi")
+vars_dis<-c("model", "year", "transmission", "fuelType", "engineSize", "manufacturer", "f.price", "f.miles", "f.mpg", "f.tax", "f.age")
+vars_con<-c("mileage", "tax", "mpg", "age")
+
+c(vars_res, vars_dis,vars_con, "mout")
+summary( df[ , c(vars_res, vars_dis, vars_con, "mout") ] )
+```
+
+## Variables explicativas numéricas
+Primero de todo, vamos a empezar aplicando una corrección para los valores de nuestras variables numéricas eliminando los valores 0 para poder eviar algunos errores que podrían salir a posteriori.
+```{r, results=FALSE}
+vars_con
+ll<-which(df$age==0);ll
+df$age[ll]<-0.5
+
+ll<-which(df$tax==0);ll
+df$tax[ll]<-0.5
+
+ll<-which(df$mpg==0);ll
+df$mpg[ll]<-0.5
+
+ll<-which(df$mileage==0);ll
+df$mileage[ll]<-0.5
+```
+
+# Modelo de regresión lineal
+
+## Variables numéricas
+Planteamos nuestro primer modelo basado en las variables numéricas. Con este modelo, pretendemos plantear una regresión lineal que tenga como target la variable price, y que use como variables explicativas mileage, tax, mpg y age.
+```{r}
+m1<-lm(price~mileage+tax+mpg+age,data=df)
+summary(m1)
+```
+En el summary que acabamos de mostrar, podemos apreciar varias cosas:
+
+En primer lugar, podemos ver los errores residuales que se generan en el modelo.
+
+También podemos ver los coeficientes que se plantean para las difernetes variables del modelo así como el término independiente (Intercept)  5.476e+04. Podemos ver como a priori, los coeficientes para todas las variables son significativamente distintos a 0.
+
+Con el valor R-squared, podemos apreciar también que el modelo este modelo explica un 51% de la variabilidad de la variable price.
+
+Por último, podemos ver también como el F-statistic nos indica que nuestra hipótesis nula de que todos los coeficientes sean iguales a 0 se puede rechazar. 
+
+Si analizamos los valores de vif (variable inflation factor), podemos ver que los más altos corresponden a las variables de mileage y age, cercanos a 3. Estos valores nos indican la co-linealidad de las variables, y empezarían a ser preocupantes cuando se acercan al 5, de modo que de momento son correctos.
+```{r}
+vif(m1)
+```
+
+En los siguientes gráficos, podemos apreciar algunas de las características del modelo.
+```{r}
+par(mfrow=c(2,2));
+plot(m1,id.n=0)
+```
+\newline
+En el gráfico de Residuals vs. Fitted podemos apreciar como no existe homocedasticidad en el modelo, ya que los residuos estan distribuidos de manera heterogénea.
+
+En el gráfico Normal Q-Q podemos ver como el modelo no presenta normalidad, ya que los residuos estandarizados se alejan de la recta que marca la normalidad.
+
+En el gráfico Scale-Location, podemos volver a apreciar la heterosticidad del modelo, analizando la raiz de los residios estandarizados.
+
+En el último gráfico, el de Residuals vs Leverage, podemos apreciar como a priori no parece que existan observariones influyentes, ya que ninguno de los puntos que se muestran tiene una distancia de Cook que indique sobre-influencia.
+
+```{r, results=FALSE, include=FALSE}
+library(MASS)
+```
+
+A continuación, vamos a determinar si alguna de las variables que hemos introducido en el modelo anterior requiere algún tipo de transformación para lograr un mejor ajuste del modelo.
+```{r}
+par(mfrow=c(1,1))
+boxcox(price~mileage+tax+mpg+age,data=df)
+```
+En el gráfico podemos ver como el intervalo de lambda que aparece es cercano al 0, hecho que indicaría la necesidad de transformar nuestra variable target price a una escala logarítmica.
+
+Vamos a proceder a plantear un segundo modelo que incluya esta transformación.
+```{r}
+m2<-lm(log(price)~mileage+tax+mpg+age,data=df)
+summary(m2)
+```
+Para este modelo, podemos apreciar como todos los coeficientes siguen siendo estadísticamente diferentes a 0 según el p-valor que se muestra en la última columna. Cabe destacar que para el caso de la variable tax, el p-valor ha subido y es cercano a 0.05.
+
+Podemos ver también como el valor R-squared ha aumentado a 0.58, indicando que este nuevo modelo acumula más explicabilidad de nuestro target.
+
+También podemos ver como los valores de vif se mantienen similares a los que aparecian en el modelo anterior, indicando que no parece existir co-linealidad entre las variables.
+```{r}
+vif(m2)
+```
+
+Observemos algunos gráficos para analizar este nuevo modelo que hemos planeado.
+```{r}
+par(mfrow=c(2,2));
+plot(m2,id.n=0);
+par(mfrow=c(1,1))
+```
+Podemos ver como según el primer gráfico, el modelo ha adquirido homocedasticidad, siendo la distribución de los residuos más homogénea.
+
+En lo que se refiere a la normalidad, podemos ver como este modelo presenta más normalidad que el anterior, al menos en lo que se refiere a los quantiles superiores. Sin embargo, para los cuantiles inferiores, aún aparece cierta distancia con la recta que describe la normalidad.
+
+Por último, para el caso de la sobre-influencia en el modelo, podemos ver un resultado similar al del anterior modelo.
+
+Vamos a proceder a realizar un análisis más en profuncidad del modelo.
+
+En los siguientes gráficos podemos ver como se distribuyen los residuos.
+```{r}
+residualPlots(m2,id=list(method=cooks.distance(m2),n=10))
+```
+Algunos casos a destacar son el de mileage, donde se puede apreciar una cierta acumulación en los valores bajos a la vez que aparecen puntos que se alejan de la nube y de la curva para valores más altos.
+
+También podemos destacar que en el caso de age, que es una variable que originalmente generamos a partir de la variable year y se puede apreciar su distribución en columnas, aparece una nube de puntos cerca del centro, probablemente debido a la imputación a partir de PCA que se realizó en la primera entrega. Podemos ver algo parecido pero no tan evidente para la variable tax.
+
+Con la siguiente función procederemos a ver el ajuste del modelo con los datos.
+```{r}
+marginalModelPlots(m2)
+```
+Podemos ver como el ajuste para el caso de la variable mileage o age parecen casi perfectos, mientras que para las varibales mpg y tax existe una cierta desviación entre las curvas roja y azul, que nos indican que hay falta de linealidad entre la variable target y las variables expliactivas.
+
+En el caso de los Fitted values, las rectas se ajustan a la perfección.
+
+Aplicando la función de boxTidwell podemos determinar las transformaciones que deberíamos aplicar a nuestro modelo para mejorarlo.
+```{r}
+#boxTidwell(log(price)~mileage+tax+age+mpg,data=df[!df$mout=="YesMOut",], verbose=TRUE)
+```
+Sin embargo, cuando ejecutamos la función pasando como entrada el modelo que habíamos planteado, nos encontramos que la función falla. Aplicando el modo verbose, podemos ver como el motivo del fallo es la tendencia a +infinito del exponenete de la variable mpg.
+
+Como no sé como proceder, vamos a realizar algunos tests:
+
+En primer lugar, vamos a crear un nuevo modelo sin la variable mpg y lo vamos a evaluar con la función boxTidwell para determinar las transformaciones a aplicar a nuestras variables explicativas (aunque hemos tenido que aumentar el número máximo de iteraciones).
+```{r}
+m3<-lm(log(price)~mileage+tax+age, data=df)
+boxTidwell(log(price)~mileage+tax+age, data=df[!df$mout=="YesMOut",], max.iter=100)
+```
+Como podemos ver, este nuevo modelo que excluye la variable mpg pierde explicabilidad, pero nos permite ejecutar la función boxTidwell para determinar las transformaciones que deberíamos aplicar a nuestras variables.
+
+Vamos a aplicar las transformaciones que aparecen con la función boxTidwell para crear un nuevo modelo.
+```{r}
+m4<-lm(log(price)~sqrt(mileage)+poly(tax,4)+age, data=df)
+summary(m4)
+#boxTidwell(log(price)~sqrt(mileage)+poly(tax,4)+age, data=df[!df$mout=="YesMOut",], verbose=TRUE)
+```
+Volviendo a aplicar la función de boxTidwell, podemos ver como, en este caso vuelve a fallar debido a que algunos de los coeficientes de los monómios que se han generado con la función poly(tax,4) son negativos.
+Sin embargo, el modelo que excluye la variable mpg, aún aplicando todas las transformaciones recomendadas, tiene un valor de R-squared inferior al original.
+
+Si ejecutamos el test de Clarke que nos permite analizar modelos no anidados, (lo he encontrado por internet) podemos ver que, aparentemente, el modelo original, que incluye la variable mpg pero ninguna transformación a parte de la logaritmica para el target, es mejor que el modelo que excluye esta variable pero incluye las transformaciones.
+```{r}
+library(games)
+clarke(m2, m4)
+```
+
+Vamos a probar incluyendo la variable mpg en el modelo que ya habíamos planteado aplicando las transformaciones que aparecían con la función boxTidwell.
+```{r}
+m5<-update(m4,~.+mpg)
+summary(m5)
+```
+En este caso, se puede ver como la incorporación de la variable mpg sí que aumenta la explicabilidad del modelo, generando un modelo más completo.
+
+Además, aplicando la función anova, podemos ver como se rechaza la hipótesis de equivalencia, de modo que el nuevo modelo es mejor.
+```{r}
+anova(m4,m5)
+```
+
+Sin embargo, si lo comparamos con el original:
+```{r}
+clarke(m2,m5)
+```
+Podemos ver como el test de clarke para modelos no anidados determina que el primer modelo es preferible.
+
+De modo que seguiremos avanzando con el segundo modelo que hemos planteado, que incluye la variable mpg pero no incluye ninguna transfromación a parte de la del target price.
+
+Vamos a proceder a observar algunos gráficos para analizar este modelo:
+```{r}
+par(mfrow=c(2,2));
+plot(m2,id.n=0);
+par(mfrow=c(1,1))
+```
+Podemos ver como según el primer gráfico, el modelo ha adquirido homocedasticidad, siendo la distribución de los residuos más homogénea.
+
+En lo que se refiere a la normalidad, podemos ver como para este modelo tiene más normalidad que el anterior, al menos en lo que se refiere a los cuantiles superiores. Sin embargo, para los cuantiles inferiores, aún aparece cierta distancia con la recta que describe la normalidad.
+
+Por último, para el caso de la sobre-influencia en el modelo, podemos ver un resultado similar al del anterior modelo.
+
+Vamos a proceder a realizar un análisis más en profuncidad del modelo.
+
+En los siguientes gráficos podemos ver como se distribuyen los residuos.
+```{r}
+residualPlots(m2,id=list(method=cooks.distance(m2),n=10))
+```
+Algunos casos a destacar son el de mileage, donde se puede apreciar una cierta acumulación en los valores bajos, a la vez que aparecen puntos que se alejan de la nube y de la curva para valores más altos.
+
+También podemos destacar que en el caso de age, que es una variable que originalmente generamos a partir de la variable year tiene una distribución en columnas. Aparece una nube de puntos cerca del centro, probablemente debido a la imputación a partir de PCA que se realizó en la primera entrega. Podemos ver algo parecido pero no tan evidente para la variable tax.
+
+Con la siguiente función procederemos a ver el ajuste del modelo con los datos.
+```{r}
+marginalModelPlots(m2)
+```
+Podemos ver como el ajuste para el caso de la variable mileage o age parecen casi perfectos, mientras que para las varibales mpg y tax existe una cierta desviación entre las curvas roja y azul.
+
+En el caso de los Fitted values, las rectas se ajustan casi a la perfección.
+
+Vamos a proceder a volver a generar el modelo excluyendo los multivariant outliers.
+```{r}
+m6<-update(m2, data=df[!df$mout=="YesMOut",])
+summary(m6)
+```
+En el caso del R-squared, podemos ver como este ha bajado, aunque infimamente, indicando que el modelo anterior aglutinaba más variabilidad de nuestro target.
+
+Vamos a proceder a estudiar la validez de nuestro tercer modelo.
+```{r}
+Anova(m6)
+```
+En este test podemos ver que todas las variables que aparecen son significaticas, de modo que ninguna de estas variables es prescindible.
+
+Con la función de VIF podemos ver como, los vifs asociados a mileage y age son mayores que 3, pero de momento no debería importarnos mucho.
+```{r}
+vif(m6)
+```
+
+Vamos a analizar los gráficos del modelo:
+```{r}
+par(mfrow=c(2,2))
+plot(m6,id.n=0)
+```
+En el de Residuals vs Fitted y Scale-Location podemos ver como el modelo presenta bastante homocedasticidad.
+
+En el de Normal Q-Q, similarmente al m2, podemos apreciar como en los cuantiles superiores aparece normalidad, mietras que para los inferiores, la normalidad de nuestro modelo se aleja de la recta debido a algunas observaciones extrañas.
+
+Por último, en el gráfico de Residuals vs Leverage, podemos ver como para este modelo siguen sin aparecer puntos con una distancia de Cook relevante, de modo que no parece existir sobre-influencia de ninguna observación.
+
+En los siguientes gráficos podemos apreciar como las rectas se ajustan bastante, excepto en el caso de la variable mpg, a la que, dados los problemas que aparecen con la tendencia a infinito de su exponente en las iteraciones de la función boxTidwell, no podemos determinar la transformación que se le debería aplicar para mejorar el modelo.
+```{r}
+par(mfrow=c(2,3))
+residualPlots(m6,id=list(method=cooks.distance(m6),n=10))
+```
+Podemos apreciar que hay tres individuos que aparecen constantemente fuera de las nubes de puntos, los 20688, 19848 y 40774.
+
+Vamos a proceder a eliminar los elementos que aparecían en los plots anteriores constantemente alejados de las nubes de puntos así como los multivariant outliers.
+```{r}
+df2 <- df[!df$mout=="YesMOut",]
+df2 <- df2[row.names(df2)!="19848",]
+df2 <- df2[row.names(df2)!="40774",]
+df2 <- df2[row.names(df2)!="20688",]
+```
+
+Procederemos a replantear el modelo excluyendo las observaciones que hemos comentado previamente.
+```{r}
+m7<-update(m6,data=df2)
+summary(m7)
+```
+Se puede apreciar como aumentan la explicabilidad pero no hay grandes cambios en la relevancia de los coeficientes.
+
+En los siguientes plots podemos ver como este pequeño cambio en el dataset hemos eliminado los indiviuos que constantemente se desviaban de las nubes de puntos. Este hecho se puede ver especialmente en el gráfico Normal Q-Q, donde hay un mejor ajuste a la recta para los cuantiles inferiores.
+```{r}
+par(mfrow=c(2,2))
+plot(m7,id.n=0)
+```
+
+Si nos fijamos en los gráficos de los residuos, podemos ver como siguen existiendo algunos desajustes en las rectas, sobretodo para las variables mpg y age.
+```{r}
+par(mfrow=c(2,3))
+residualPlots(m7,id=list(method=cooks.distance(m7),n=10))
+```
+
+Si realizamos el test de Breusch-Pagan contra la heteroscedasticidad de nuestro modelo, obtenemos un p-valor de 0.0005, de modo que podemos rechazar la H_0 y confirmar que nuestro modelo es homocedástico.
+```{r}
+library(lmtest)
+bptest(m7)
+```
+
+Vamos a proceder a mostrar los boxplots de los valores R-student, Hat y distancias de Cook de las observaciones del modelo.
+```{r}
+par(mfrow=c(1,3))
+Boxplot(abs(rstudent(m7)),id=list(labels=row.names(df2)))
+Boxplot(abs(hatvalues(m7)),id=list(labels=row.names(df2)))
+Boxplot(cooks.distance(m7),id=list(labels=row.names(df2)))
+```
+Con estos gráficos podemos detectar los valores para los cuales se rompe la cadena de puntos y podemos categorizar como outliers.
+```{r}
+stu_out <- which(abs(rstudent(m7))>3.7);
+cook_out <- which(abs(cooks.distance(m7))>0.0065);
+hat_out <- which(abs(hatvalues(m7))>0.007);
+
+outs<-unique(c(stu_out,cook_out,hat_out));outs
+```
+
+Si analizamos el gráfico de influencias, podemos ver como no existe una distribución aglomerada, tal vez en los individuos con valores de Hat muy bajos, pero en general existe basante dispersión.
+```{r}
+par(mfrow=c(1,1));
+outs2 <- influencePlot(m7, id=list(n=10));
+outs2 <- labels(outs2)[[1]];
+outs2 <- as.numeric(outs2);
+outs3 <- unique(c(outs,outs2));outs3
+```
+
+Vamos a terminar este análisis generando un modelo excluyendo los individuos que hemos detectado como outliers.
+```{r}
+m8 <- update(m7, data=df2[-outs3,])
+summary(m8)
+```
+Vemos que la explicabilidad del modelo final es del 57,47%.
+
+
+## Factores
+
+Vamos a empezar añadiendo un solo factor al modelo. En este caso empezaremos con los factores que determinamos que eran más influyentes en el análisis MCA de la entrega anterior. Los tres factores más relevantes eran f.price, transmission y fuelType. No añadiremos f.price ya que es un factor generado a partir de nuestra variable target.
+
+De momento empezamos añadiendo fuelType.
+```{r}
+m10<- update(m8, ~.+fuelType)
+summary(m10)
+```
+Como podemos ver ya a simple vista, el R-squared del modelo ha aumentado significativamente, indicando mayor explicabilidad.
+
+Si analizamos los vif, vemos que no ha habido cambios significativos respecto al modelo anterior. Los vifs se mantinenen en valores inferiores a 5.
+```{r}
+vif(m10)
+```
+
+Con el test anova podemos ver como todas las variables mantienen su significatividad.
+```{r}
+Anova(m10)
+```
+
+Si analizmos los plots del modelo, podemos ver como el modelo parece haber perdido homocedasticidad y normalidad en los extremos, y la distribución de las distancias de Cook es algo peculiar, generando diversas acumulaciones de puntos.
+```{r}
+par(mfrow=c(2,2))
+plot(m10,id.n=0)
+```
+
+Vamos a proceder a incorporar también el factor transmission.
+```{r}
+m11 <- update(m10, ~.+transmission)
+summary(m11)
+```
+Con el aumento del R-squared, podemos apreciar un nuevo aumento en la explicabilidad del modelo. 
+
+El test de anova nos indica que el nuevo modelo es preferible al anteior.
+```{r}
+anova(m10,m11)
+```
+
+Si analizamos los plots de este modelo, podemos ver como no aparecen cambios significativos. Tal vez podemos apreciar algo más de normalidad, pero la homocedasticidad y las distancias de Cook no parecen haber cambiado mucho.
+```{r}
+par(mfrow=c(2,2))
+plot(m11)
+```
+
+En lo que se refiere a los vifs, no hay cambios significativos, indicando que no aparece co-linealidad en las variables.
+```{r}
+vif(m11) 
+```
+
+Si analizamos los plots de los residuos, para las variables numéricas no apreciamos grandes cambios, 
+```{r}
+par(mfrow=c(1,1))
+residualPlots(m11,id=list(method=cooks.distance(m11),n=10))
+```
+
+## Interacciones
+
+### Interacciones entre factores
+
+Vamos a proceder a incorporar la interacció entre los factores transmission y fuelType. 
+```{r}
+m13 <- update(m11, ~.+transmission*fuelType)
+summary(m13)
+```
+Podemos ver como el R-squared apenas aumenta y se mantiene la explicabilidad de las variables.
+
+Si realizamos el test de anova, podemos ver como, a pensar de que a partir del summary los modelos parecen similares, no lo son, y en realidad el nuevo modelo es mejor que el anterior.
+```{r}
+anova(m11,m13)
+```
+
+### Interacciones Factor-Numéricas
+Vamos a probar a añadir las interacciones de la variable numérica age y el factor transmission. Podemos ver como los dos modelos no son equivalentes, y según el test de anova, el nuevo modelo es más completo.
+```{r}
+m14 <- update(m13, ~.+age*transmission)
+anova(m13,m14)
+```
+
+Si analizamos los plots del modelo, podemos ver como existe homocedasticidad y aparece bastante normalidad.
+```{r}
+par(mfrow=c(2,2))
+plot(m14, id.n=0)
+```
+
+Si analizamos los plots de los residuos, podemos ver como el ajuste de las regresiones entre el modelo y los datos es muy preciso.
+```{r}
+marginalModelPlots(m14)
+```
+Podemos ver claramente fuerte relación entre la variable mpg y nuestro target numérico.
+
+```{r}
+library(effects);
+plot(allEffects(m14))
+```
+Además, si nos fijamos en la interaccions de age y transmission, podemos ver como para todos los tipos de transmisión se respeta la relación inversa con el precio: cuantos más años tiene el coche, más barato es, y viceversa. Por el contrario, en el caso de fuelType, podemos ver como los coches de gasolina son más baratos que los diesel o híbridos.
+
+Si hacemos una rápida búsqueda en internet (https://www.motor.mapfre.es/consejos-practicos/consejos-para-ahorrar/diesel-o-gasolina/) podemos ver como esto este hecho cuadra con la realidad.
+
+El problema aparece cuando intentamos aplicar la función vif para comprobar la no co-linealidad de las variables del modelo, ya que salta un error que nos indica que si que hay variables co-lineales. Sin embargo, si realizamos un análisis de las varianzas, todas las variables parecen significativas. Las que menos significación adquieren son tax y la interacción entre age y transmission.
+```{r}
+#vif(m14)
+Anova(m14);
+```
+
+Vamos a proceder a aplicar la función step para tratar de eliminar esta co-linealidad.
+```{r}
+m15 <- step( m14, k=log(nrow(df2)))
+#vif(m15)
+```
+
+Si realizamos el test de anova, podemos ver como el nuevo modelo no es equivalente al anterior, y de hecho, sigue apareciendo co-linealidad en las variables, de modo que el m14 es preferible.
+```{r}
+anova(m15,m14)
+```
+
+Si aplicamos la función alias, podemos ver que esta colinealidad parece generada por la aparición de las variables transmission y fuelType. Supongo que es debido a que los coches híbridos suelen tener transmisión automática, de modo que el conjunto Hybrid:SemiAuto queda vacío, mientras que hybrid y hybrid&Automatic son el mismo conjunto.
+```{r}
+alias(m14)
+```
+
+```{r}
+summary(m14)
+```
+Finalmente, si echamos un último vistazo al modelo, podemos ver que hemos conseguido aglomerar una explicabilidad del 80%.
+
+# Modelo de regresión Binaria
+
+Para plantear el modelo de regresión binaria, vamos a proceder primero a separar nuestro dataframe en dos subconjuntos de entrenamiento y de validación.
+```{r}
+llwork <- sample(1:nrow(df2),round(0.80*nrow(df2),0))
+
+df_train <- df2[llwork,]
+df_test <-df2[-llwork,]
+```
+
+## Variables numéricas
+
+Vamos a empezar el proceso de generación del modelo de regresión binaria incorporando las variables numéricas y planteando un modelo incial.
+```{r}
+m20<-glm(Audi~mileage+tax+mpg+age,family="binomial",data=df_train)
+summary(m20)
+```
+Como podemos ver, la variable más significativa de nuestro modelo incial parece ser mpg, mientras que mileage o tax parecen no ser significativas.
+También podemos ver como el valor AIC es 3810.1, nuestro objetivo será reducirlo.
+
+Si miramos los valores vif de nuestro modelo, podemos ver como no reflejan co-linealidad entre las variables.
+```{r}
+vif(m20)
+```
+
+Vamos a plantear un nuevo modelo que incluya solo las variables mpg y age, que son las que aparecían como significativas en el modelo anterior.
+Si realizamos el test anova de los dos modelos, podemos ver como los modelos parecen equivalentes, de modo que será preferible trabajar con el más sencillo.
+```{r}
+m21 <- glm(Audi~ mpg + age,family="binomial",data=df_train)
+anova(m21,m20,test = "LR");
+```
+
+Probaremos a añadir los polinomios de segundo grado de las variables del modelo que acabamos de generar.
+El test de anova nos vuelve a indicar que los modelos son equivalentes, de modo que continuaremos trabajando con el más simple.
+```{r}
+m22 <- glm(Audi~ poly(mpg,2) + poly(age,2), family="binomial", data=df_train)
+anova(m21,m22, test = "LR")
+```
+
+Finalmente, este es el modelo con el que continuaremos trabajando, ya que es el más sencillo y equivalente a otros modelos más complejos que hemos planteado.
+```{r}
+summary(m21)
+```
+Podemos ver como el AIC de este modelo es 3807.8.
+
+
+## Factores
+
+Vamos a proceder a añadir los factores que resultaron más significativos en el análisis MCA de la segunda entrega.
+
+Como el factor engineSize tiene muchos niveles, vamos a proceder a transformala para que adquiera solo 3 niveles y poder simplificar el modelo.
+```{r}
+df_train$engineSize_f <- as.integer(df_train$engineSize)
+par(mfrow=c(1,1))
+hist(df_train$engineSize_f)
+quantile(df_train$engineSize_f, c(0.3333333,0.6666666,1))
+df_train$engineSize_f <- factor(cut(df_train$engineSize_f, breaks = c(0,8,9,20)))
+df_test$engineSize_f <- as.integer(df_test$engineSize)
+df_test$engineSize_f <- factor(cut(df_test$engineSize_f, breaks = c(0,8,9,20)))
+table(df_train$engineSize_f)
+```
+
+Añadimos los factores fuelType y transmission al modelo. Podemos ver como añadiendo estos dos factores hemos conseguido una reducción del AIC. Además, con la función vif podemos ver que no hay aparente co-linealidad entre las variables explicativas del modelo.
+```{r}
+m24 <- update(m21, ~.+fuelType+transmission)
+summary(m24)
+vif(m24)
+```
+
+Si analizamos la varianza del modelo, podemos ver como todas las variables de nuestro modelo son sifnificativas.
+```{r}
+Anova(m24, test="LR")
+```
+
+Con el test anova podemos ver como los modelos no son equivalentes, de modo que nos quedaremos con el que incluye los factores, ya que presenta un AIC inferior.
+```{r}
+anova(m21,m24, test="LR")
+```
+
+Ahora añadiremos el factor derivado de engineSize que hemos generado antes. Podemos ver que este nuevo modelo vuelve a presentar un AIC inferior al del anterior. Además, si usamos la función vif podemos ver como no existe co-linealidad entre las variables.
+```{r}
+m25 <- update(m24, ~.+engineSize_f)
+summary(m25)
+vif(m25)
+```
+
+Si observamos el análisis de la varianza, vemos que todos los componentes de nuestro modelo son representativos.
+Por otro lado, no podemos usar las funciones anova ni AIC para comparar ambos modelos, ya que al incluir el factor EngineSize, se han generado algunos missings en los datos que imposibilitan la comparación.
+```{r}
+Anova(m25, test="LR")
+#anova(m24,m25, test="LR")    #No se pueden hacer porque han aparecido missings en el dataset cuando hemos añadido el factor de enginesize
+#AIC(m24,m25)                 
+```
+
+Sin embargo, seguiremos avanzando con el nuevo modelo que hemos generado ya que tiene un AIC inferior.
+
+```{r}
+residualPlots(m25,id=list(method=cooks.distance(m25),n=10))
+marginalModelPlots(m25)
+avPlots(m25,id=list(method=hatvalues(m25),n=5))
+crPlots(m25,id=list(method=cooks.distance(m25),n=5))
+# library(effects)
+plot(allEffects(m25))
+```
+
+## Interacciones
+
+Procederemos a incorporar las interacciones entre los factores fuelType y transmission. Podemos ver como el AIC del modelo se reduce inmendiatamente. Sin embargo, cuando intentamos usar la función vif para estudiar la co-linealidad de las variables, nos genera un error ya que parece que sí que existe co-linealidad.
+```{r}
+m26 <- update(m25, ~.*(fuelType+transmission)^2,data=df_train)
+#summary(m26) Omitimos debido a la longitud de la salida
+#vif(m26)
+```
+Si realizamos un análisis de la varianza del modelo, vemos como hay algunas interacciones que no son significativas, como pueden ser mpg:fuelType:transmission, age:fuelType:transmission o fuelType:transmission.
+```{r}
+Anova(m26, test="LR")
+```
+
+Usaremos la función step para plantear el mejor modelo posible a partir de una simplificación del que ya tenemos. Si intentamos volver a ejecutar la función vif, vuelve a generar un error que indica que sigue existiendo co-linealidad entre las variables de nuestro modelo, pero en el summary podemos ver como el AIC de este modelo vuelve a ser inferior al del anterior.
+```{r}
+m27 <- step( m26 )
+#vif(m27)
+summary(m27)
+```
+
+Si realizamos un análisis de la varianza, podemos ver como algunas interacciones parecen no ser significativas.
+```{r}
+Anova(m27, test="LR")
+```
+
+Vamos a proceder a generar un nuevo modelo que excluya las interacciones no rsignificativas del modelo anterior. Nos encontramos que cuando analizamos este modelo, vuelve a aparecer co-linealidad en las variables, de modo que realizaremos una step regression. 
+```{r}
+m28 <- update(m27, ~.-fuelType:transmission - age:fuelType)
+#vif(m28) -> Salta error
+```
+
+En este caso, si que podemos ver que ya ha desaparecido la co-linealidad en las variables, y si realizamos el test de anova para los dos modelos, podemos ver que son equivalentes.
+```{r}
+m29 <- step(m28)
+vif(m29)
+anova(m29,m28, test="LR")
+```
+
+## Diagnóstico
+En primer lugar, vamos a ver el summary de nuestro modelo.
+```{r}
+summary(m29)
+```
+Como podemos ver, su valor de AIC asociado es de 3639.7. Aunque no es el mejor resultado que hemos conseguido, ya que el m28 tenia 3646.8, este no presenta co-linealidad.
+
+Como hemos comentado anteriormente, con la función vif podemos ver como no aparece co-linealidad entre las variables del modelo.
+Si analizamos la varianza del modelo, veremos como todas las variables que aparecen son significativas.
+```{r}
+vif(m29)
+Anova(m29)
+```
+
+Vamos a proceder a analizar algunos gráficos del modelo que hemos generado.
+
+Si analizamos los boxplots de las los valores de Hat y las distancias de Cook, podemos ver como hay una serie de elementos que aparecen muy separados, algunos coinciden en los tres gráficos.
+```{r}
+par(mfrow=c(1,3))
+Boxplot(hatvalues(m29),id=c(labels=row.names(df_train)))
+Boxplot(cooks.distance(m29),id=c(labels=row.names(df_train)))
+Boxplot(abs(rstudent(m29)),id=c(labels=row.names(df_train)))
+```
+
+En primer lugar, vamos a observar los valores de los residuos de student. Al haber generado el gráfico con el valor absoluto, solo tendremos que filtrar la parte superior del boxplot. Podemos ver como la cadena de puntos se rompe aproximadamente cerca del 2.3, de manera que vamos a considerar los individuos con residuo de student fuera del intervalo [-2.3, 2.3] como outliers. Haremos lo mismo para las observaciones con distancias de Cook superiores a 0.0035 y Hat values superiores a 0.07.
+```{r}
+stu_out <- which(abs(rstudent(m29))>2.3);
+cook_out <- which(abs(cooks.distance(m29))>0.0035);
+hat_out <- which(abs(hatvalues(m29))>0.07);
+
+outs<-unique(c(stu_out,cook_out,hat_out));outs
+```
+
+Si echamos un vistazo al plot que nos marca la influencia que tienen las distinas observaciones hacia el modelo, podemos ver como aparecen algunos puntos bastante alejados de las nubes que se crean, algunos con bastante influencia.
+```{r}
+par(mfrow=c(1,1));
+outs2 <- influencePlot(m29, id=c(labels=row.names(df_train)));
+outs2 <- labels(outs2)[[1]];
+outs2 <- as.numeric(outs2);
+outs3 <- unique(c(outs,outs2));outs3
+```
+
+Vamos a proceder a crear un nuevo modelo que excluya las observaciones que hemos considerado como outliers.
+```{r}
+m30 <- update(m29,data=df_train[-outs3,])
+summary(m30)
+```
+Podemos ver como el valor AIC del modelo ha disminuido.
+
+Con la función vif vemos que no existen variables co-lineales en el modelo. Si analizamos la varianza, vemos que todas las variables son significativas.
+```{r}
+vif(m30)
+Anova(m30, test="LR")
+```
+
+```{r}
+marginalModelPlots(m30)
+```
+
+```{r}
+m0<-glm(Audi ~ 1, family="binomial", data=df_train[-outs3,])
+```
+
+## Bondad del ajuste y capacidad de predicción
+
+Vamos a estudiar la bondad de nuestro modelo y su capacidad de predicción.
+
+En primer lugar, vamos a empezar planteando la distribucion del modelo de forma asimptótica con el test de chi-cuadrado.
+```{r}
+Anova(m30)
+1-pchisq(m30$deviance, m30$df.residual)
+```
+Como podemos ver, el p-valor de nuestra hipótesis nula es de 0.95, de modo que podemos aceptarla y afirmar que, en efecto, el modelo se ajusta bien a los datos.
+
+Similarmente, si planteamos el estadístico de Pearson X2, nos encontramos que en este caso, aplicando un intervalo de confianza del 95%, deberíamos aceptar nuestra hipótesis nula y afirmar que el modelo se ajusta bien a los datos.
+```{r}
+X2m30<-sum((resid(m30,"pearson")^2))
+1-pchisq( X2m30, m30$df.res)
+```
+
+Si aplicamos el test de Pseudo R2, que tiene un rol similar a la suma de los cuadrados de los residuos en una regresion clásica, podemos ver como existen claras discrepancias entre si podemos o no aceptar nuestra hipótesis nula.
+```{r}
+library(DescTools)
+PseudoR2(m30, which='all')
+```
+Sin embargo, debemos recordar que estos test no funcionan con conjuntos de datos agrupados, como pueden ser los que aparecen en nuestra variable engineSize, o en los factores que hemos incluido en nuestro modelo.
+
+Si planteamos el test de Hoslem, podemos ver como el p-valor de la hipótesis nula es de 0.1336, y podemos aceptar nuestra hipótesis nula, afirmando que el modelo SÍ que se ajusta bien a los datos.
+```{r}
+library(ResourceSelection)
+ll <- which( is.finite(df_test$engineSize_f) )
+pred_test <- predict(m30, newdata=df_test[ll,], type="response")
+ht <- hoslem.test(as.numeric(df_test$Audi[ll])-1,  pred_test)
+ht
+```
+
+```{r, include=FALSE, results=FALSE}
+library("ROCR")
+```
+
+A continuación vamos a general la curva de ROC que nos ayudará a ver de manera gráfica la bondad del ajuste del modelo.
+
+De manera indicativa, un modelo excelente, se acercaría mucho al punto (0,1), mientras que un modelo que se acerca a la recta con y = x sería un modelo malo.
+```{r}
+pred <- prediction(pred_test, df_test$Audi[ll])
+perf <- performance(pred,measure="tpr",x.measure="fpr")
+
+plot(perf,colorize=TRUE,type="l") 
+abline(a=0,b=1)
+
+# Área bajo la curva
+AUC       <- performance(pred,measure="auc")
+AUCaltura <- AUC@y.values
+
+# Punto de corte óptimo
+cost.perf <- performance(pred, measure ="cost")
+opt.cut   <- pred@cutoffs[[1]][which.min(cost.perf@y.values[[1]])]
+#coordenadas del punto de corte óptimo
+x<-perf@x.values[[1]][which.min(cost.perf@y.values[[1]])]
+y<-perf@y.values[[1]][which.min(cost.perf@y.values[[1]])]
+points(x,y, pch=20, col="red")
+```
+Como podemos ver, nuestro modelo se acerca más a la recta x=y que al punto (0,1), indicando que es bastante mejorable.
+
+Vamos a analizar algunos valores característicos de esta curva.
+```{r}
+# Área bajo la curva
+AUC       <- performance(pred,measure="auc")
+AUCaltura <- AUC@y.values
+
+cat("AUC:", AUCaltura[[1]]);
+cat("Punto de corte óptimo:",opt.cut)
+```
+Podemos ver que el área bajo la curva es de 0.687, indicando que es un modelo bastante malo.
+Además, el punto de córte óptimo se situa en el (0,0) (No se muy bien como interpretar este resultado, pero muy positivo no debe ser...)
+
+## Matriz de confusión
+Vamos a generar la matriz de confusión del modelo que hemos planteado.
+```{r}
+audi.est <- ifelse(pred_test<0.4,0,1)
+tt<-table(audi.est,df_test$Audi[ll]);tt;
+```
+Si aplicamos las definiciones:
+  Sensibilidad: 12 / (12 + 184) = 0.06
+  Especificidad: 726 / (28 + 721) = 0.97
+
+Con estos dos conceptos podemos concluir que el modelo responde que NO a casi todo. Vemos como de las 210 observaciones que SÍ que eran Audi, solo ha respondido correctamente al 5%. Por otro lado, vemos como ha acertado casi todos los NO Audi...
+
+Finalmente, si estudiamos la tasa de acierto de nuestro modelo, podemos ver que con el conjunto de validación ha acertado el 77.68% de las veces.
+```{r}
+100*sum(diag(tt))/sum(tt)
+```

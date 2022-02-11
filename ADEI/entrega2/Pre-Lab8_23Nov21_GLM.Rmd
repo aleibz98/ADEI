@@ -1,0 +1,270 @@
+---
+title: "Load Data and Set Sample"
+author: "Lidia Montero & Josep Franquet"
+date: \today
+output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: no
+    toc_depth: '4'
+  word_document:
+    toc: no
+    toc_depth: '4'
+geometry: left=1.9cm,right=1.9cm,top=1.25cm,bottom=1.52cm
+fontsize: 18pt
+subtitle: 'Laboratori 8 - Statistical modelling'
+classoption: a4paper
+editor_options: 
+  chunk_output_type: console
+---
+
+# Presentation - Títol nivell 1
+## R Markdowns document - Títol nivell 2
+
+This is an R Markdown document. 
+We are showing some examples of GLMz. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>. Use * to provide emphasis such as *italics* and **bold**.
+
+Create lists: Unordered * and +     or   ordered   1. 2.  
+
+  1. Item 1
+  2. Item 2
+    + Item 2a
+    + Item 2b
+
+# Header 1
+## Header 2
+
+## Data Description: 100,000 UK Used Car Data set
+ 
+This data dictionary describes data  (https://www.kaggle.com/adityadesai13/used-car-dataset-ford-and-mercedes) - A sample of 5000 trips has been randomly selected from Mercedes, BMW, Volkwagen and Audi manufacturers. So, firstly you have to combine used car from the 4 manufacturers into 1 dataframe.
+
+The cars with engine size 0 are in fact electric cars, nevertheless Mercedes C class, and other given cars are not electric cars,so data imputation is requered. 
+
+
+  -   manufacturer	Factor: Audi, BMW, Mercedes or Volkswagen
+  -   model	Car model
+  -   year	registration year
+  -   price	price in £
+  -   transmission	type of gearbox
+  -   mileage	distance used
+  -   fuelType	engine fuel
+  -   tax	road tax
+  -   mpg	Consumption in miles per gallon   
+  -   engineSize	size in litres
+
+
+# Load Required Packages: to be increased over the course
+
+```{r}
+# Load Required Packages: to be increased over the course
+options(contrasts=c("contr.treatment","contr.treatment"))
+
+requiredPackages <- c("effects","FactoMineR","car", "factoextra","RColorBrewer","ggplot2","dplyr","ggmap","ggthemes","knitr")
+
+#use this function to check if each package is on the local machine
+#if a package is installed, it will be loaded
+#if any are not, the missing package(s) will be installed and loaded
+package.check <- lapply(requiredPackages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+#verify they are loaded
+search()
+
+```
+
+# Load data
+
+```{r}
+setwd("E:/Docencia_UPC/GEI-ADEI/LAB 8")
+load("MyOldCars-1000Clean.Rdata")
+```
+
+
+# Linear Models: Using numerical explanatory variables
+
+```{r}
+vars_con
+ll<-which(df$age==0);ll
+df$age[ll]<-0.5
+
+ll<-which(df$tax==0);ll
+df$tax[ll]<-0.5
+
+#1st linear model with my numeric variables:
+m1<-lm(price~mileage+tax+mpg+age,data=df)
+summary(m1)
+vif(m1) #Variance inflation factor: multicorrelation
+par(mfrow=c(2,2))
+plot(m1,id.n=0)
+# Basic graphs for model validation
+par(mfrow=c(1,1))
+
+library(MASS)
+# Target variable transformation?
+boxcox(price~mileage+tax+mpg+age,data=df)
+# Lambda=0 - log transformation is needed
+
+# New model:
+m2<-lm(log(price)~mileage+tax+mpg+age,data=df)
+summary(m2)
+vif(m2) #Not changed because explanatory variables have not changed
+
+
+# Transformations to my regresors?
+boxTidwell(log(price)~mileage+tax+mpg+age,data=df[!df$mout=="YesMOut",])
+# Power transformations of the predictors in a linear model
+
+par(mfrow=c(2,2))
+plot(m2,id.n=0)
+par(mfrow=c(1,1))
+
+# Other tools to validate my linear model:
+residualPlots(m2,id=list(method=cooks.distance(m2),n=10)) 
+marginalModelPlots(m2)
+avPlots(m2,id=list(method=cooks.distance(m2),n=5))
+crPlots(m2,id=list(method=cooks.distance(m2),n=5))
+# Objective: Check linearity of my data (model and fit data) and chech how my model fits to my data 
+
+# Suggested by BoxTidwell
+m3<-lm(log(price)~log(mileage)+sqrt(tax)+poly(mpg,2)+age,data=df[!df$mout=="YesMOut",])
+summary(m3)
+
+# Validation and effects consideration:
+Anova(m3) #Net effect test
+vif(m3)
+par(mfrow=c(2,2))
+plot(m3,id.n=0)
+par(mfrow=c(1,1))
+residualPlots(m3,id=list(method=cooks.distance(m3),n=10))
+marginalModelPlots(m3)
+avPlots(m3,id=list(method=hatvalues(m3),n=5))
+crPlots(m3,id=list(method=cooks.distance(m3),n=5))
+
+#Non linearity of age caused by observation 33261:
+df2 <- df[!df$mout=="YesMOut",]
+df2 <- df2[row.names(df2)!="33261",]
+
+
+m4<-lm(log(price)~log(mileage)+sqrt(tax)+poly(mpg,2)+age,data=df2)
+summary(m4)
+par(mfrow=c(2,2))
+plot(m4,id.n=0)
+par(mfrow=c(1,1))
+residualPlots(m4,id=list(method=cooks.distance(m4),n=10))
+marginalModelPlots(m4)
+avPlots(m4,id=list(method=hatvalues(m4),n=5))
+crPlots(m4,id=list(method=cooks.distance(m4),n=5))
+
+m5<-lm(log(price)~log(mileage)+poly(tax,2)+poly(mpg,2)+poly(age,2),data=df2)
+summary(m5)
+library(lmtest)
+bptest(m5) #Homoskedasticity
+anova(m4, m5) #Does the variable age squared have to be included in my model
+summary(m5)
+par(mfrow=c(2,2))
+plot(m5)
+
+
+m4 <- step( m5, k=log(nrow(df)))
+
+llres <- which(abs(rstudent(m4))>4);length(llres)
+df[llres,]
+
+par(mfrow=c(1,1))
+influencePlot(m5, id=list(n=10))
+cooks.distance(m5)
+
+```
+
+# Adding factors
+```{r}
+options(contrasts = c("contr.treatment", "contr.treatment"))
+
+# Final numeric model is m5 with observation 33261 removed and multivariate outliers:
+m5<-lm(log(price)~log(mileage)+poly(tax,2)+poly(mpg,2)+poly(age,2),data=df2)
+summary(m5)
+par(mfrow=c(2,2))
+plot(m5)
+
+# Adding the variable fuelType with baseline reparametrization
+m6 <- update(m5, ~.+fuelType,data=df2)
+vif(m6)
+summary(m6)
+Anova(m6)
+par(mfrow=c(2,2))
+plot(m6,id.n=0)
+
+m6 <- update(m6, ~.+transmission,data=df2)
+summary(m6)
+par(mfrow=c(2,2))
+plot(m6)
+vif(m6)
+par(mfrow=c(1,1))
+residualPlots(m6,id=list(method=cooks.distance(m6),n=10))
+df2$engineSize <- as.integer(df2$engineSize)
+# Reparametrization of engine size into factor:
+
+marginalModelPlots(m6)
+avPlots(m5,id=list(method=hatvalues(m5),n=5))
+crPlots(m5,id=list(method=cooks.distance(m5),n=5))
+library(effects)
+plot(allEffects(m5))
+
+vif(m6)
+summary(m6)
+Anova(m6)
+plot(allEffects(m6))
+m7 <- step( m6, k=log(nrow(df[!df$mout=="YesMOut",])))
+m8 <- step( m5, k=log(nrow(df[!df$mout=="YesMOut",])))
+AIC(m5,m6,m7,m8)
+
+summary(m7)
+```
+
+# Diagnostics for numeric variables:
+
+```{r}
+dfwork <- df[!df$mout=="YesMOut",]
+m5<-lm(log(price)~log(mileage)+poly(tax,2)+poly(mpg,2)+poly(age,2),data=dfwork)
+
+vif(m5)
+summary(m5)
+Anova(m5)
+plot(allEffects(m5))
+par(mfrow=c(2,2))
+plot(m5,id.n=0)
+par(mfrow=c(1,1))
+
+llres <- which(abs(rstudent(m5))>3);llres
+which(row.names(dfwork) %in% names(rstudent(m5)[llres]))
+influencePlot(m5, id=list(n=10))
+Boxplot(cooks.distance(m5),id=list(labels=row.names(dfwork)))
+llout<-which(abs(cooks.distance(m5))>0.05);length(llout)
+which(row.names(dfwork) %in% names(cooks.distance(m5)[llout]))
+llrem<-unique(c(llout,llres));llrem
+
+m7<-lm(log(price)~ mileage + sqrt(1/mpg) + I(engineSize^(-2/3)) + age + 
+    fuelType + transmission,data=dfwork[-llrem,])
+
+vif(m7)
+summary(m7)
+Anova(m7)
+plot(allEffects(m7))
+par(mfrow=c(2,2))
+plot(m7,id.n=0)
+par(mfrow=c(1,1))
+
+marginalModelPlots(m7)
+avPlots(m7)
+crPlots(m7)
+
+influencePlot(m7)
+```
+
+

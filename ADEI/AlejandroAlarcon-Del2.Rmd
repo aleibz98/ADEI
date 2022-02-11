@@ -1,0 +1,662 @@
+---
+title: "Práctica de ADEI"
+author: "Alejandro Alarcón"
+date: "10/19/2021"
+output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: no
+    toc_depth: '4'
+  word_document:
+    toc: no
+    toc_depth: '4'
+geometry: left=1.9cm,right=1.9cm,top=1.25cm,bottom=1.52cm
+fontsize: 18pt
+subtitle: 'Entregable 2'
+classoption: a4paper
+editor_options: 
+  chunk_output_type: console
+---
+
+\newpage
+```{r setup, include=FALSE, results=FALSE, echo=FALSE}
+#Configuración del environment
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(comment = NA)
+require("knitr")
+opts_knit$set(root.dir = "/Users/aleibz/ADEI/ADEI/ADEI/")
+```
+
+```{r, echo=FALSE, results=FALSE, include=FALSE}
+#Limpiamos el environment.
+
+# Clear plots
+if(!is.null(dev.list())) dev.off()
+
+# Clean workspace
+rm(list=ls())
+```
+
+
+```{r, echo=FALSE, results=FALSE, include=FALSE}
+#Importamos las librerias y paquetes necesarios.
+
+options(contrasts=c("contr.treatment","contr.treatment"))
+
+requiredPackages <- c("effects","FactoMineR","car", "factoextra","RColorBrewer","ggplot2","dplyr","ggmap","ggthemes","knitr", "missMDA")
+
+package.check <- lapply(requiredPackages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+#verify they are loaded
+search()
+```
+
+```{r, echo=FALSE, results=FALSE,include=FALSE}
+#Cargamos los datos
+load("/Users/aleibz/ADEI/ADEI/ADEI/data_del1.RData")
+```
+
+\newpage
+# Análisis de Componentes Principales
+
+En primer lugar, vamos a echar un vistazo a nuestras variables.
+Las vamos a mostrar en un orden concreto que nos va ayudar más tarde a referirnos a ellas a partir de sus índices.
+```{r, echo=FALSE, results=FALSE, include=FALSE}
+vars_res<-c("price","Audi")
+vars_cat<-c("model", "year", "transmission", "fuelType", "engineSize", "manufacturer", "f.price", "f.miles", "f.mpg", "f.tax", "f.age")
+vars_num<-c("mileage", "tax", "mpg", "age")
+
+c(vars_res, vars_cat,vars_num, "mout")
+summary( df[ , c(vars_res, vars_cat, vars_num, "mout") ] )
+```
+
+Realizamos el análisis PCA de nuestro dataset, pasando como variables suplementarias qualitativas todos nuestros factores, y como variable suplementaria cuantitativa nuestro target numérico price. Además, añadimos los individuos que hemos categorizado como multivariant outliers como individuos suplementarios, para que no introduzcan ruido a la hora de calcular el PCA.
+```{r}
+ll <- which( df$mout == "YesMOut")
+res.pca<-PCA(df[,c(vars_res, vars_cat, vars_num)],quali.sup=c(2:13),quanti.sup= c(1), ind.sup = ll )
+```
+
+Como podemos apreciar en los gráficos previos, las dos primeras componentes principales aglutinan un 52,64% y un 30,09% de la variabilidad respectivamente.
+
+Podemos apreciar también como la primera componente principal parece aglutinar la variabilidad de las variables mileage y age, que se proyectan en la misma dirección, solapandose en el diagrama, mientras que la segunda componente principal aglutina sobretodo la variabilidad de la variable tax. Asímismo, parece que las dos componentes reflejan la variable mpg por igual, sin embargo en el caso de la Dim2 esta relación es negativa.
+
+Además de esto, podemos ver la proyección de nuestro target numérico price en el plano formado por las dos primeras componentes principales. Se puede apreciar que price está más relacionada con la primera componente que con la segunda, pero de manera negativa.
+
+Por último, podemos ver la proyección de los individuos en el plano formado por las dos componentes principales. Cabe destacar un pequeño grupo de individuos en la esquina inferior izquierda del plot.
+```{r}
+plot.PCA(res.pca,choix=c("ind"),invisible=c("ind"))
+```
+
+```{r}
+res.pca$eig
+```
+Se puede ver que se han creado 4 componentes diferentes, cuyos Eigenvalues normalizados son 2,106, 1,203, 0,510 y 0,181 respectivamente. Si seguimos el criterio de Kaiser, como estos eigenvalues ya se han normalizado, deberíamos quedarnos con aquellos componentes con eigenvalues superiores a 1, de modo que nos quedaríamos con las dos primeras componentes.
+
+En la siguiente salida, podemos ver que, como ya habíamos mencionado previamente, la variable tax tiene más correlación con el segundo componente que en el primero, mientras que podemos ver que pasa lo contrario con las variables mileage o age. También podemos ver que la variable price se relaciona más con la primera componente aunque lo hace de manera negativa.
+```{r}
+res.pca$var$cor
+```
+
+En el siguiente plot podemos ver los eigenvalues de las cuatro componentes que se han generado.
+```{r}
+barplot(res.pca$eig[,1],main="Eigenvalues",names.arg=paste("dim",1:nrow(res.pca$eig)))
+```
+
+## Análisis según los individuos
+A continuación, vamos a proceder a analizar los individuos.
+
+En la salida a continuación, podemos apreciar:
+En las dos primeras columnas, las coordenadas que reciben los individuos para las dos primeras componentes principales.
+En las siguientes dos columnas, los valores correspondientes al cos2 para las dos dimensiones correspondientes a cada individuo.
+En las dos últimas columnas, la contribución que tienen los individuos en cada componente principal.
+```{r}
+head(round(cbind(res.pca$ind$coord[,1:2],res.pca$ind$cos2[,1:2],res.pca$ind$contrib[,1:2]),2))
+```
+
+En la siguiente salida, podemos apreciar, de manera ordenada para la primera dimensión, los individuos que más contribución tienen hacia la primera dimensión y así como sus contribuciones para el resto de dimensiones.
+```{r}
+inds <- res.pca$ind$coord
+inds <- as.data.frame(inds)
+rang.dim1<-inds[order(inds$Dim.1, decreasing = TRUE),]
+head(rang.dim1)
+```
+
+Vamos a proceder a hacer lo mismo para la segunda dimensión.
+```{r}
+rang.dim2<-inds[order(inds$Dim.2, decreasing = TRUE),]
+head(rang.dim2)
+```
+Como se puede apreciar en las salidas anteriores, podemos ver como parece haber elementos con más contribución en la segunda dimensión que en la primera. 
+
+A continuación, podemos ver todas las variables de los 10 primeros individuos que más aportan a la primera componente principal:
+```{r}
+df[which(row.names(df) %in% row.names(res.pca$ind$coord[row.names(rang.dim1)[1:10],])),]
+```
+Como se puede apreciar, la mayoría tienen valores altos para las variables age y mileage, que son las que más se relacionan con la primera componente. Contrariamente, por norma general, estos vehículos también tienen precios menores, cosa que era esperable si tenemos en cuenta que la proyección de la variable price en el plano formado por las dos componentes principales tiene sentido negativo.
+
+## Análisis según las variables
+
+### Variables numéricas
+Desde el punto de vista de las variables, en la salida a continuación, podemos ver los valores correspondientes al cos2 para cada una de las componentes principales en las dos primeras columnas, así como las contribuciones que tienen hacia estas en las dos últimas. Cabe destacar las contribuciones de las variables age y mileago para la primera dimensión.
+```{r}
+round(cbind(res.pca$var$cos2[,1:2],res.pca$var$contrib[,1:2]),2)
+```
+
+A continuación podemos ver las correlaciones de todas nuestras variables numéricas con la primera componente principal. Cabe destacar las fuertes correlaciones con age y mileage, como habíamos mencionado previamente.
+```{r}
+res.des<-dimdesc(res.pca)
+res.des$Dim.1$quanti
+```
+
+Por último, y aunque hemos afirmado que, según el criterio de Kaiser, solo eran necesarias 2 componentes principales, vamos a analizar graficamente las componentes 3 y 4.
+Podemos apreciar como las variables tax y mpg tienen gran importancia en la tercera componente, mientras que para la cuarta tienen más importancia mileage y age.
+
+```{r}
+plot.PCA(res.pca,choix=c("var"),axes=c(3,4))
+```
+
+En el siguiente gráfico, podemos ver gráficamente y de manera resumida la importancia que tienen cada una de las variables numéricas en las diferentes componentes principales.
+```{r}
+library("corrplot")
+corrplot(res.pca$var$cos2, is.corr=FALSE)
+```
+
+### Targets
+En el siguiente plot, podemos apreciar como nuestro target categórico AUDI, tiene más relación con la segunda dimensión que con la primera.
+```{r}
+ll <- which( df$mout == "YesMOut")
+res.pca<-PCA(df[,c(vars_res, vars_num)],quali.sup=c(2),quanti.sup= c(1), ind.sup = ll, ncp=2)
+plot(res.pca, choix="ind",invisible=c("ind","ind.sup"), cex=0.7, graph.type = "classic")
+```
+
+Podemos ver como la componente más representativa de este target es la segunda, ya que las coordenadas que aparecen vienen dadas por la correlación.
+```{r}
+res.pca$quali.sup$coord 
+```
+
+### Factores
+A continuación podemos ver los coeficientes R-squared que aparecen para nuestros factores:
+Cabe destacar la variabilidad de la componente que viene explicada por la variabilidad de factores como year o f.miles. Si lo analizamos, nos daremos cuenta de que estos factores se crearon en la entrega anterior a partir de las variables mileage y age, de modo que es coherente que los estos factores derivados también tengan una alta explicabilidad de la varianza de la primera componente.
+```{r}
+res.des$Dim.1$quali
+```
+
+Para la segunda componente, podemos ver como los factores más relevantes son f.tax y f.mpg.
+```{r}
+res.des$Dim.2$quali
+```
+
+En resumen, hemos podido ver que tras realizar el PCA, las dos primeras componentes son capaces que aglutinar un 82.73% de la variablidad de nuestro target. Las dos variables que más peso tienen para la primera componente son mileage y age, mientras que para la segunda, la variable más relevantes es tax.
+
+También podemos ver como al añadir los factores como suplementarios, los factores derivados de las variables numéricas adquiren una alta correlación con aquellas componentes donde sus variables numéricas asociadas tienen un peso mayor.
+
+\newpage
+# Hierachical Clustering
+A continuación, y para ser prácticos, vamos a proceder a realizar el proceso de clustering jerárquico, a partir del cual vamos a determinar (o al menos aproximar) el número óptimo de clusters para ejecutar el clustering con K-means.
+
+En primer lugar, vamos a volver a ejecutar el PCA con las variables categoricas como suplementarias y quedándonos solo con las dos primeras componentes principales, como se ha determinado anteriormente con el criterio de Kaiser para el ACP.
+```{r}
+res.pca<-PCA(df[,c(vars_res, vars_cat, vars_num)],quali.sup=c(2:13),quanti.sup= c(1), ind.sup = ll, ncp = 2)
+```
+
+A continuación ejecutaremos el HCPC a partir del ACP anterior. Con el parámetro nb.clust=-1 indicamos al sistema que tome el número óptimo de clusters según la partición con la que el decremento relativo de inercia es más alto. (Según la documentación - (i(clusters n+1)/i(cluster n)) ). Podemos ver que para este caso, se ha seleccionado como óptima una partición de 3 clusters.
+```{r}
+res.hcpc<-HCPC(res.pca,order=TRUE, nb.clust=-1)
+```
+
+Si aplicamos el criterio de Kaiser, podemos ver que dos componentes son sufientes.
+```{r}
+length(which(res.hcpc$call$t$res$eig[,1] > mean(res.hcpc$call$t$res$eig[,1])))
+```
+
+Según los dos criterios aplicados (el que aplica el sistema con el parámetro nb.clust=-1 y el de Kaiser) obtenemos que el número óptimo de componentes es 2 o 3. Procederemos con 3 componentes ya que así aglomeramos mayor variabilidad.
+
+Ejecutando el siguiente comando, podemos ver como se relacionan las dos componentes principales a partir de las cuales hemos generado la clusterización, con los diferentes clusters que se han generado.
+Se puede apreciar como para el cluster 1, la coordenada de la primera componente principal es significativamente más baja que para el conjunto del datafrfame.
+En el caso del cluster 2, ambas componentes principales tienen un valor mayor.
+Por último, para el cluster 3, la primera componente tiene un valor mayor mientras que la segunda tiene un valor menor.
+```{r}
+res.hcpc$desc.axes
+```
+
+## Análisis según las variables
+A continuación vamos a ver como se relacionan las variables originales del dataframe con los clusters que se han generado.
+
+En primer lugar, podemos ver el número de individuos que se han asignado a cada cluster.
+```{r}
+summary(res.hcpc$data.clust$clust)
+```
+
+### Factores
+A partir del test de chi2, se puede determinar que factores diferencian los clusters que se han generado.
+```{r}
+res.hcpc$desc.var$test.chi2
+```
+
+Si profundizamos un poco mas en esto, podemos ver como caracterizan los valores de las variables cualitativas los distintos clusters que se han generado.
+
+<He omitido la salida porque ocupa mucho, pero abajo podemos ver algunas de las conlcusiones>
+
+```{r}
+#res.hcpc$desc.var$category
+```
+Podemos destacar, por ejemplo la acumulación de coches nuevos y con poco kilometraje en el primer cluster(f.age=f.age-[1,2] -> Mod/Cla 76.0016694)
+
+### Variables numéricas
+Con el test eta-squared, podemos determinar qué variables numéricas han sido influyentes a la hora de generar la clusterización.
+```{r}
+res.hcpc$desc.var$quanti.var
+```
+Podemos ver que las variables más representativas son age, mileage y tax, que son las mismas que aparecen como más determinantes a la hora de realizar el PCA.
+
+Por último, podemos analizar como estas variables numéricas caracterizan los distintos clusters.
+```{r}
+res.hcpc$desc.var$quanti
+```
+En el cluster 1, podemos apreciar como aparecen coches con precios más altos y menores kilometrajes y años, de modo que este cluster está formado por coches nuevos y con poco uso, que tienen asociado un precio más elevado.
+
+En el cluster 2, podemos ver como aparecen coches ás viejos y con más kilometraje, con un precio más bajo. 
+
+Por último, podríamos calificar el cluster 3 como el cluster 'ECO', ya que aparecen coches con un consumo muy bajo y que han pagado menos impuestos, puede que debido a subvenciones.
+
+## Análisis según los inividuos
+
+Vamos a analizar los paragons de cada cluster que se ha derivado a partir del clústering jerárquico.
+```{r}
+res.hcpc$desc.ind$para
+```
+
+Si analizamos los paragons del primer cluster, podemos ver como aparecen coches nuevos de gasolina. Todos tienen kilometrajes e impuestos similares.
+```{r}
+summary(df[c("30871","24055","28264","48543","34122"),])
+```
+
+Por último, echaremos un vistazo a los individuos más típicos de los clusters:
+```{r}
+res.hcpc$desc.ind$dist
+```
+
+Si analizamos el primer cluster, podemos ver que todos son del 2020 y en su mayoría semi-áutomáticos. Además, tienen kilometrajes y consumos muy bajos. Todos están en el rango más alto de precio.
+```{r}
+summary(df[c("31816","17634","17208","48339","24771"),])
+```
+
+Podemos ver amplias diferencias entre los individuos típicos de los clusters y los paragons.
+
+\newpage
+
+# K-means Clustering desde ACP
+```{r}
+res.pca<-PCA(df[,c(vars_res, vars_cat, vars_num)],quali.sup=c(2:13),quanti.sup= c(1), ind.sup = ll, ncp=2)
+ppcc <- res.pca$ind$coord
+kc <- kmeans (dist(ppcc),3)
+df[-ll, "claKMPCA"] <- kc$cluster
+```
+
+Podemos ver como dentro de nuestra variable kc, se guardan datos como el cluster al que se asigna cada elemento, las distancias en el interior de los clusters o las distancias entre clusters. 
+```{r}
+summary(kc)
+```
+
+Estos valores nos ayudan a determinar la calidad de la cluserización, ya que idealmente, queremos clusters con elementos muy juntos entre si y mucha diferenciación entre clusters.
+Para var la calidad de la clusterización, vamos a realizar el cociente de las distancias entre clusters entre la suma de todas las distancias.
+```{r}
+kc$betweenss/kc$totss
+```
+Podemos ver que la suma de las distancias entre los clusters suma un 70% del total.
+
+Por otro lado, si comprobamos la suma de las distancias dentro de los clusters, podemos ver como estas tan solo suman el 30% del total.
+```{r}
+kc$tot.withinss/kc$totss
+```
+
+De este modo, podemos determinar que la calidad de la clusterización es relativamente buena ya que la distancia entre clusters es grande (los clusters están diferenciados entre si), pero las distancias dentro de los clusters son pequeñas (los clusters están formados por elementos muy parecidos).
+
+A continuación, vamos a mostrar un plot donde se muestran claramente los clusters de diferentes colores. 
+```{r}
+fviz_cluster(kc, data=ppcc)
+```
+En este gráfico podemos ver como no esxiste una definición tan clara como esperábamos en la clusterización.
+
+Por último, vamos a volver a mostrar el gráfico resultande del clustering jerárquico, para poder comparar mejor los resultados:
+```{r}
+plot.HCPC(res.hcpc, choice="map")
+```
+Podemos ver como los dos procesos de clusterización han llevado a resultados realmente diferentes. A primera vista, se puede ver como la clusterización jerárquica da un resultado mucho más comprensible en el plano de las dos componentes que se han usado para realizar la clusterización.
+
+Por otro lado, en los dos procesos se ha definido el primer cluster de manera muy similar.
+
+Vamos a analizar los clusters que se han creado a partir de K-Means.
+```{r}
+df$claKMPCA <- factor(df$claKMPCA)
+km.catdes<-catdes(df[,c("claKMPCA",vars_num,vars_cat, "price")],1)
+km.catdes$quanti
+```
+Podemos ver como el primer cluster esta formado por coches con consumo bajo y con impuestos bajos, lo que sería equivalente al cluster 3 'ECO' que hemos obtenido en la clusterización jerárquica.
+
+Para el cluster 2, podemos ver como aparecen coches más baratos pero viejos y con más kilometraje.
+
+En el cluster 3, aparecen los coches más caros, nuevos y con menor kilometraje. Curioso que también tengan mayor consumo.
+
+\newpage
+# Correspondence Analysis
+Vamos a proceder a realizar el análisis de correspondencias entre variables.
+
+En primer lugar, vamos a analizar la correspondencia entre f.price y f.miles.
+```{r}
+tt<-table(df[,c("f.price","f.miles")])
+res.ca<-CA(tt)
+chisq.test(tt)
+```
+
+Podemos ver que la mayoría de la variabilidad se acumula en la primera componente (87%).
+```{r}
+fviz_eig(res.ca)
+```
+
+Si realizamos los plots, podemos ver la presencia del efecto Guttman que nos indica que las variables estan fuertemente relacionadas.
+```{r}
+plot( res.ca, cex=0.8, graph.type = "classic" )
+lines( res.ca$row$coord[,1], res.ca$row$coord[,2], col="blue", lwd = 2 )
+lines( res.ca$col$coord[,1], res.ca$col$coord[,2], col="red", lwd = 2 )
+```
+
+En el siguiente gráfico se puede ver como los coches con menor kilometraje tienen precios más altos y viceversa. 
+```{r}
+fviz_ca_biplot(res.ca,repel=TRUE)+theme_bw() 
+```
+
+A continuación, vamos a realizar el mismo proceso para las variables f.price y f.age.
+```{r}
+tt<-table(df[,c("f.price","f.age")])
+res.ca<-CA(tt)
+```
+
+En este caso, también se puede ver la clara relación que hay entre las variables, donde los coches más nuevos son más caros y los viejos más baratos.
+```{r}
+plot( res.ca, cex=0.8, graph.type = "classic" )
+lines( res.ca$row$coord[,1], res.ca$row$coord[,2], col="blue", lwd = 2 )
+lines( res.ca$col$coord[,1], res.ca$col$coord[,2], col="red", lwd = 2 )
+```
+
+Por último, vamos a analizar la relación entre f.price y manufacturer.
+En este caso, se puede ver claramente los coches VW tienen precios más baratos que los BMW, Audi o Mercedes.
+```{r}
+tt<-table(df[,c("f.price","manufacturer")])
+res.ca<-CA(tt)
+```
+
+En este caso, en el siguiente gráfico se puede ver claramente los coches VW tienen precios más baratos que los BMW, Audi o Mercedes.
+```{r}
+fviz_ca_biplot(res.ca,repel=TRUE)+theme_bw() 
+```
+
+Es por este motivo, que factores como pueden ser manufacturer o engineSize pueden no resultar determinantes a la hora de explicar nuestro target numérico price.
+
+
+\newpage
+# Multiple Correspondence Analysis
+A continuación vamos a proceder a realizar el MCA. Para ello, en primer lugar vamos a seleccionar los individuos que hemos considerado como multivariant outliers para añadirlos como suplementarios.
+También se ha considerado la eliminación de la variable engineSize ya que si se incluye genera errores.
+También se han suprimido los factores model y year. Model se ha quitado ya que tiene demasiados valores y acaba no siendo explicativo. Year se ha eliminado porque guarda demasiada relación con f.age.
+Se añaden como variables suplementarias los factores f.price y Audi, además de la variable price, ya que son nuestros targets.
+```{r}
+llvout<-which(df$mout=="YesMOut");length(llvout)
+res.mca<-MCA(df[,c("f.price","Audi",vars_cat[c(3:4,6,8:11)],"price", vars_num) ], quali.sup=c(1,2),quanti.sup=10:14 , ind.sup=llvout) # Quitamos engineSize porque si no no funciona y f.price para que no salga duplicada
+```
+
+Vamos a aplicar el criterio de Kaiser para determinar el número de dimensiones relevantes para continuar el análisis MCA. En este caso, como los eigenvalues no están normalizados, nos quedaremos con todas las dimensiones que tengan un eigenvalue mayor que la media de todos los eigenvalues.
+```{r}
+length(which(res.mca$eig[,1] > mean(res.mca$eig[,1])))
+```
+
+A continuación podemos ver los eigenvalues de las dimensiones seleccionadas, los porcentajes de varianza que acumulan y las varianza que hay acumulada hasta esa dimensión. Podemos ver que para el caso de la dimensión 7, que es la que nos ha indicado el criterio de Kaiser, se ha aglutinado cerca de un 60% de la variabilidad.
+```{r}
+res.mca$eig[1:7,]
+```
+
+En el siguiente gráfico podemos ver de una manera más visual la variabilidad acumulada para cada dimensión:
+```{r}
+fviz_eig(res.mca)
+```
+
+## Análisis segun las variables
+### Factores
+Si analizamos el estadístico cos2, podemos ver la correlación que existe entre los factores y las componentes que se han creado. Podemos ver que para la Dim 1, el valor más relevante es f.age-[1,2] o f.gae-[+4] y para la segunda dimensión estaría f.Trans-Manual.
+```{r}
+res.mca$var$cos2
+```
+
+En el siguiente gráfico se pueden apreciar los valores de cos2 de un modo más visual:
+```{r}
+fviz_cos2(res.mca, choice = "var", axes = 1:2)+theme_bw()+theme(axis.text.x = element_text(angle=90))
+```
+
+Por último, si echamos un vistado a eta2, podemos ver la relevancia que tienen los factores, no solo los valores que estos toman.
+```{r}
+res.mca$var$eta2
+```
+Podemos ve que para la primera dimensión, los factores más relevantes son f.age y f.miles, mientras que para la segunda serían manufacturer y transmission.
+
+En el siguiente gráfico, podemos ver la contribución que tienen las variables para las dos primeras dimensiones generadas por el MCA, y que recordemos, acumulan cerca del 25% de la variabilidad.
+```{r}
+fviz_mca_var(res.mca, col.var="contrib",repel=TRUE,labelsize = 2)+
+    scale_color_gradient2(low="green", mid="blue", 
+    high="red", midpoint=0.75)+theme_bw()
+```
+
+### Variables numéricas
+
+Vamos a echar un vistazo a las variables numéricas. En la siguiente salida podemos observar la correlación que existe entre las variables numéricas originales y las componentes que se han obtenido con el MCA.
+```{r}
+res.mca$quanti
+```
+Podemos destacar la fuerte correlación de las variables age y mileage con la primera componente, y de price con la segunda.
+
+Como curiosidad, podemos mencionar que el hecho de que para la primera dimensión age y mileage aparezcan tan correlacionadas puede ser debido al hecho de sus factores derivados son los que más relevancia adquieren en esta primera dimension.
+
+\newpage
+# Clustering Jerárquico desde MCA
+
+Vamos a proceder a volver a realizar el clustering jerárquico pero esta vez lo vamos a lanzar desde el MCA en lugar del PCA.
+Vamos a añadir el número de componentes que hemos determinado durante el análisis MCA a partir del criterio de Kaiser.
+```{r}
+res.mca<-MCA(df[,c("f.price","Audi",vars_cat[c(3:4,6,8:11)],"price",vars_num) ],quali.sup=c(1,2),quanti.sup=c(10:14) , ind.sup=llvout, ncp=7)
+res.hcmc<-HCPC(res.mca,nb.clust=-1,order=TRUE)
+```
+Como podemos ver en la salida, en este caso, a partir del parámetro nb.clust=-1 que como hemos mencionado anteriormente, automatizaba la selección del número optimo de clusters, se han generado 4 clusters.
+
+Sin embargo, si tenemos en cuenta el criterio de Kaiser, podemos ver que, en este caso, este número de componentes no son suficientes. Según Kaiser, deberíamos tomar 7 componentes.
+```{r}
+length(which(res.hcmc$call$t$res$eig[,1] > mean(res.hcmc$call$t$res$eig[,1])))
+```
+
+En el siguiente plot podemos ver la ganancia de inercia que se produce en nuestro modelo de clusterización jerarquica.
+Si aplicamos la regla de elbow, podemos determinar que el número óptimo de clusters sería alrededor de 6.
+```{r}
+plot(res.hcmc$call$t$inert.gain[1:20])
+```
+
+Por lo tanto, y resumiento, nb.clust nos da 4 componentes, elbow nos da 6 y Kaiser nos da 7. Nos quedaremos con el de Kaiser porque es el más específico.
+
+```{r}
+res.hcmc<-HCPC(res.mca,nb.clust=7,order=TRUE)
+```
+
+A continuación podemos ver inercia acumulada en las 7 primeras componentes.
+```{r}
+(res.hcmc$call$t$within[1]-res.hcmc$call$t$within[1:7])/res.hcmc$call$t$within[1]
+```
+
+Crearemos una nueva variable en nuestro df para guardar en que cluster se han asignado los individuos.
+```{r}
+df$claHCMC<-7
+df[row.names(res.hcmc$data.clust),"claHCMC"]<-res.hcmc$data.clust$clust
+df$claHCMC<-factor(df$claHCMC)
+levels( df$claHCMC ) <- paste0( "f.claHCMC-",levels( df$claHCMC ))
+table(df$claHCMC)
+```
+
+## Análisis según las variables
+### Factores
+En primer lugar, vamos a analizar el estadístico chi-squared para determinar que factores son las que más determinan las diferencias entre clusters:
+```{r}
+res.hcmc$desc.var$test.chi2
+```
+
+Si profundizamos un poco más podemos ver caracterizar un poco los clusters según los valores de estos factores. 
+<He omitido la salida porque ocupa mucho, pero podemos ver algunas de las conclusiones abajo>
+```{r}
+#res.hcmc$desc.var$category
+```
+Podemos ver, por ejemplo, que el cluster 1 esta compuesto por coches muy nuevos (f.age=f.age-[1,2] -> Mod/Cla 96.6631908) y con poco kilometraje (f.miles=f.miles-[0.001,5.81] -> Mod/Cla 69.9687174). Por el contrario, practicamente no hay coches viejos (f.age=f.age-(+4) -> Mod/Cla 0.1042753) o con precios bajos (f.price=f.price-[899,1.1e+04] -> Mod/Cla 0.00000000).
+
+Contrariamente, en el cluster 7, se acumulan los vehículos con más de 4 años, Diesel y con mpg elevados.
+
+### Variables numéricas
+En los que se refiere a las variables cuantitavitas:
+```{r}
+res.hcmc$desc.var$quanti.var
+```
+Podemos ver que la que mejor explica la separación entre clusters es age, mientras que price parece ser la menos explicativa.
+
+En este apartado, cabe destacar que todas las variables tienen factores derivados que se han usado para generar el clustering. Sin embargo, hay que tener en cuenta que en el caso de nuestro target price, su discretización solo se ha añadido como variable suplementaria, de modo que no ha tenido influencia en la clusterización, hecho que explica que aparezca como la menos representativa.
+
+Si analizamos más en profundidad, podemos ver las distribuciones que toman cada una de las variables cualitativas dentro de los distintos clusters.
+
+```{r}
+res.hcmc$desc.var$quanti
+```
+Como se ha comentado con anterioridad según la descripción a partir de los factores, podemos ver que en el primer cluster price es más alto, mientras que mileage, age o mpg son signitivamente más bajos que en el resto del df. De modo que en este cluster aparecen los coches más nuevos y caros.
+
+Para el caso del cluster 2, podemos ver como aparecen coches algo más caros que la media, pero sin llegar al nivel del primer cluster.
+
+En el caso del cluster 3, podemos ver como price pasa a ser un factor no tan relevante en favor de age y mpg.
+
+Asimismo, podemos ver como en el cluster 7, se acumulan vehiculos más viejos y con más kilometraje, pero también más baratos.
+
+
+## Análisis según las componentes del MCA
+Vamos a proceder a analizar la clusterización a apartir de los ejes generados a partir del MCA.
+
+En primer lugar, podemos ver la relevancia que han tenido las distintas componentes del MCA para generar la clusterización:
+```{r}
+res.hcmc$desc.axes$quanti.var
+```
+Podemos ver como la dimensión 1 ha tenido la mayor relevancia, mientras que la dimensión 6 ha sido la menos determinante.
+
+Por último, podemos ver algunas estadísticas sobre como se distribuyen las coordenadas del MCA para cada individuo en los diferentes clusters:
+```{r}
+res.hcmc$desc.axes$quanti
+```
+
+## Análisis según individuos
+
+En las siguientes salidas podemos ver los paragons del primer cluster.
+```{r}
+res.hcmc$desc.ind$para
+```
+
+Curiosamente, entre los paragons del primer cluster, aparecen vehículos VW semi-automáticos Diesel. Todos tienen entre 1 y 2 años y consumos y kilometrajes muy bajos.
+```{r}
+summary(df[c("40410","44910","45035","45038","45440"),])
+```
+
+En la siguiente salida podemos ver los individuos característicos de cada cluster:
+```{r}
+res.hcmc$desc.ind$dist
+```
+
+Si nos fijamos, en este caso, los infivi
+```{r}
+summary(df[c("5388", "7854", "10322", "10323", "10482"),])
+```
+Si recogemos los datos de los paragons del primer cluster, podemos ver como todos los vehículos son Audi, de cambio automático y gasolina. También tienen consumos muy bajos y tiene entre 1 y 2 años. 
+
+
+# K-Means Clustering desde MCA
+
+Por último, vamos a realizar un clustering con el algoritmo de K-Means a partir del MCA.
+```{r}
+ppcc <- res.mca$ind$coord[,1:7];
+kc<-kmeans(dist(ppcc),7)
+```
+
+En primer lugar, vamos a analizar el porcentaje de distancias que se acumulan con la suma de distancias entre clusters respecto al total.
+```{r}
+kc$betweenss/kc$totss
+```
+Podemos ver que es de un 61%, lo que a priori es peor que en la clusterización a partir de ACP.
+
+En el caso de las distancias dentro de los clusters, estas suman un 39%.
+```{r}
+kc$tot.withinss/kc$totss
+```
+
+## Profiling de la clusterización
+
+Vamos a analizar las cualidades de los distintos clusters que se han creado.
+```{r}
+df[-ll, "claKMMCA"] <- kc$cluster
+df$claKMMCA <- factor(df$claKMMCA)
+km.catdes<-catdes(df[,c("claKMMCA",vars_num,vars_cat, "price")],1)
+```
+
+```{r}
+km.catdes$quanti[1]
+```
+Para el primer cluster, podemos ver como la variable más determinante ha sido tax, en concreto, se agrupan los individuos que han pagado más impuestos. Podemos ver como el consumo de estos individuos es más alto. Puede que hablemos de vehículos ecológicos con subvenciones.
+
+```{r}
+km.catdes$quanti[2]
+```
+Para el segundo cluster, podemos ver como la variable más deterinante es el precio, que es muy inferior a la media. Podemos destacar también que los vehículos son más viejos y con más kilometraje.
+
+```{r}
+km.catdes$quanti[3]
+```
+En lo que se refiere al tercer cluster, podemos ver como la variable más determinante es el consumo. En concreto aparecen vehículos con un consumo inferior. Estos vehículos también son más nuevos y tienen un kilometraje inferior a la media.
+
+
+```{r}
+km.catdes$quanti[7]
+```
+Pasando directos al cluster 7, podemos ver como en este caso, aparecen vehículos más baratos y con menor kilometraje e impuestos que la media, aunque en general no están muy alejados del centroide del dataset.
+
+Con estos dos resultados, se puede concluir que la clusterización desde el ACP es de mayor calidad que la generada a partir del ACM. 
+
+Este hecho es aún más evidente si lo representamos de manera gráfica:
+```{r}
+fviz_cluster(kc, data=ppcc)
+```
+
+Lamentablemente, al solo poder representar los clusters en 2 dimensiones, el gráfico resultante es practicamente incomprensible, de modo que vamos a realizar el mismo proceso pero solo aportando las coordenadas pertenecientes a las 2 primeras componentes del MCA, que son las que más variabilidad acumumulan (25%).
+
+<Solo por motivos de visualización. Si pudieramos representar las 7 dimensiones veriamos como las clusterización SÍ que tiene sentido>
+
+```{r}
+ppcc <- res.mca$ind$coord[,1:2];
+kc<-kmeans(dist(ppcc),7)
+fviz_cluster(kc, data=ppcc)
+```
+En este caso si que podemos ver bien diferenciados los distinos clusters.
+
+Si analizamos las distancias, podemos ver como en este caso, se crean clusters más diferenciados entre si, pero con individuos más similares. Esto es debido a que solo se están usando 2 dimensiones y la variabilidad qu se acumula es muy baja.
+```{r}
+kc$betweenss/kc$totss;kc$tot.withinss/kc$totss
+```
+Podemos ver que la distancia entre clusters acumula un 82% del total, mientras que las distancias dentro de los clusters acumulan solo un 17%. Seria un resultado bastante bueno si con las dos dimensiones que estamos representado acumuláramos mayor variabilidad.
+
+Por último, volvemos a poner el gráfico generado a partir del clustering jerárquico con MCA para comparar las distintas clusterizaciones que se han llevado a cabo segun clustering jerárquico y Kmeans.
+```{r}
+plot.HCPC(res.hcmc, choice="map")
+```
+
